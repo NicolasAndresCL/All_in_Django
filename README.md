@@ -8,7 +8,8 @@ tests con **pytest-django**.
 ## Stack
 
 Python 3.14 · Django 6 · DRF · pydantic-settings · pandas/openpyxl · requests/beautifulsoup4 ·
-fpdf2 · selenium · cachetools. Base de datos: **SQLite** (`db.sqlite3`).
+fpdf2 · selenium · cachetools · dj-database-url · psycopg. Base de datos: **SQLite**
+(`db.sqlite3`) por defecto, o **PostgreSQL** vía `DATABASE_URL` (ver [Base de datos](#base-de-datos)).
 
 ## Estructura
 
@@ -85,6 +86,12 @@ python manage.py loaddata fixtures/datos_sqlite.json
 El volcado usa **claves naturales** y excluye `contenttypes`/`auth.permission` (los recrea
 `migrate`), por lo que carga limpio en la base nueva. Los campos calculados
 (`horas`, `bruto/neto/extra`) viajan en el volcado, no se recalculan al cargar.
+
+`fixtures/` está en `.gitignore`: contiene datos reales (horarios, tareas y notas
+personales), no fixtures de test para versionar. Tras un `loaddata` con PKs explícitas,
+Postgres no avanza las secuencias de autoincremento: resetéalas con
+`django.db.connection.ops.sequence_reset_sql` (o crea un registro de prueba y bórralo)
+antes de dar altas nuevas desde la API/UI, o chocarán con "duplicate key".
 
 ## API
 

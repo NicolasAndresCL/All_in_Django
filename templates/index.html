@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All in Django</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background:#0b0e14; color:#e6e6e6; margin:0; padding:32px; }
+    h1 { color:#4ec9b0; }
+    .grid { display:flex; flex-wrap:wrap; gap:16px; margin:24px 0; }
+    .card { background:#1a1c23; border:1px solid #2d2f39; border-radius:12px; padding:18px 22px; min-width:160px; }
+    .card .val { font-size:1.8rem; font-weight:700; color:#fff; }
+    .card .lbl { color:#9aa0ae; font-size:.85rem; }
+    a.btn { display:inline-block; margin:4px 8px 4px 0; padding:8px 14px; border-radius:8px;
+            background:#262730; color:#8ad; text-decoration:none; border:1px solid #3c3c3c; }
+    a.btn:hover { border-color:#4ec9b0; }
+  </style>
+</head>
+<body>
+  <h1>🧩 All in Django</h1>
+  <p>Centro unificado — API REST + Admin · Nicolás Cano</p>
+
+  <h2>Resumen</h2>
+  <div class="grid">
+    {% for label, valor in metricas %}
+      <div class="card"><div class="val">{{ valor }}</div><div class="lbl">{{ label }}</div></div>
+    {% endfor %}
+  </div>
+
+  <h2>Accesos</h2>
+  <a class="btn" href="/admin/">Django Admin</a>
+  <a class="btn" href="/api/">API navegable</a>
+  <a class="btn" href="/api/tv/canales/">TV Chile</a>
+  <br>
+  {% for m in modulos %}<a class="btn" href="/api/{{ m }}/">/api/{{ m }}/</a>{% endfor %}
+</body>
+</html>

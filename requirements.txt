@@ -1,0 +1,12 @@
+django>=5.2
+djangorestframework>=3.15
+pydantic-settings>=2.0
+pandas>=2.0
+openpyxl>=3.1
+requests>=2.31
+beautifulsoup4>=4.12
+fpdf2>=2.7
+selenium>=4.20
+cachetools>=5.3
+dj-database-url>=2.1        # parsea DATABASE_URL (SQLite por defecto, Postgres si se define)
+psycopg[binary]>=3.1        # driver PostgreSQL (binary: sin compilar en Windows)

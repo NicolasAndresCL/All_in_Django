@@ -1,0 +1,47 @@
+# Entorno virtual
+env/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+*.log
+/staticfiles/
+/media/
+
+# Datos reales (volcados de migración, no son fixtures de test para versionar):
+# contienen horarios, tareas y notas personales del autor.
+fixtures/
+
+# Secretos / config local
+.env
+.env.*.local
+.streamlit/secrets.toml
+
+# Cobertura de tests
+.coverage
+.coverage.*
+htmlcov/
+
+# Test / IDE
+.pytest_cache/
+.vscode/
+.idea/
+
+# SO
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Guía de desarrollo con IA (uso local, no se publica en el repo)
+CLAUDE.md
+
+# Config local de Claude Code (personal, no versionar)
+.claude/settings.local.json
