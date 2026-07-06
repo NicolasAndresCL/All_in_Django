@@ -47,13 +47,30 @@ def test_preparar_turnos_equipo():
 def test_guardar_turnos_calcula_y_no_duplica():
     from datetime import date
     fila = {"semana_inicio": date(2026, 6, 1), "trabajador": "Babi", "dia": "Lunes",
-            "entrada": time(13, 0), "salida": time(22, 0), "es_libre": False}
+            "entrada": time(13, 0), "salida": time(22, 0), "es_libre": False}  # bruto 9
     services.guardar_turnos([fila])
-    services.guardar_turnos([{**fila, "entrada": time(9, 0), "salida": time(18, 0)}])
+    # Actualizar a un turno de 3h (10–13): bruto/neto deben RECALCULARSE al actualizar.
+    # (Regresión: update_or_create pasaba update_fields y no persistía bruto/neto.)
+    services.guardar_turnos([{**fila, "entrada": time(10, 0), "salida": time(13, 0)}])
     qs = TurnoEquipo.objects.filter(semana_inicio=date(2026, 6, 1), trabajador="Babi", dia="Lunes")
-    assert qs.count() == 1                 # update_or_create no duplica
+    assert qs.count() == 1                 # upsert: no duplica
     t = qs.first()
-    assert t.entrada == time(9, 0) and t.bruto == 9.0 and t.neto == 8.0
+    assert t.entrada == time(10, 0) and t.bruto == 3.0 and t.neto == 2.0
+
+
+@pytest.mark.django_db
+def test_api_reescribir_turno_equipo_reemplaza():
+    client = APIClient()
+    base = {"semana_inicio": "2026-06-01", "trabajador": "Nico", "dia": "Lunes"}
+    r1 = client.post("/api/turnos-equipo/", {**base, "entrada": "09:00:00", "salida": "18:00:00"},
+                     format="json")
+    assert r1.status_code == 201
+    # Reescribir el mismo (semana, trabajador, día): reemplaza, no da 400.
+    r2 = client.post("/api/turnos-equipo/", {**base, "entrada": "13:00:00", "salida": "22:00:00"},
+                     format="json")
+    assert r2.status_code == 201, r2.data
+    qs = TurnoEquipo.objects.filter(semana_inicio="2026-06-01", trabajador="Nico", dia="Lunes")
+    assert qs.count() == 1 and qs.get().entrada == time(13, 0)
 
 
 # ─── API importar ────────────────────────────────────────────────────────────

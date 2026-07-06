@@ -127,3 +127,45 @@ def test_api_copiar_semana_clases():
 def test_api_copiar_semana_sin_datos_da_400():
     resp = APIClient().post("/api/clases/copiar_semana/", {"origen": "2026-06-01"}, format="json")
     assert resp.status_code == 400
+
+
+# ─── upsert de turnos personales (reescribir un día lo reemplaza) ─────────────
+@pytest.mark.django_db
+def test_api_reescribir_turno_reemplaza_no_falla():
+    client = APIClient()
+    # Primer registro del Lunes (turno 18–23).
+    r1 = client.post("/api/turnos-personales/", {
+        "semana_inicio": "2026-06-08", "dia": "Lunes",
+        "entrada": "18:00:00", "salida": "23:00:00",
+    }, format="json")
+    assert r1.status_code == 201
+
+    # Reescribir el MISMO día con otro horario: debe reemplazar, no dar 400.
+    r2 = client.post("/api/turnos-personales/", {
+        "semana_inicio": "2026-06-08", "dia": "Lunes",
+        "entrada": "09:00:00", "salida": "15:00:00",
+    }, format="json")
+    assert r2.status_code == 201, r2.data
+
+    # Sigue habiendo un único turno para ese día, con el horario nuevo.
+    turnos = TurnoPersonal.objects.filter(semana_inicio=date(2026, 6, 8), dia="Lunes")
+    assert turnos.count() == 1
+    t = turnos.get()
+    assert t.entrada == time(9, 0) and t.salida == time(15, 0)
+    assert t.bruto == 6.0  # recalculado en save()
+
+
+@pytest.mark.django_db
+def test_api_reescribir_turno_como_libre():
+    client = APIClient()
+    client.post("/api/turnos-personales/", {
+        "semana_inicio": "2026-06-08", "dia": "Martes",
+        "entrada": "18:00:00", "salida": "23:00:00",
+    }, format="json")
+    # Marcar ese día como libre: reemplaza y limpia entrada/salida.
+    resp = client.post("/api/turnos-personales/", {
+        "semana_inicio": "2026-06-08", "dia": "Martes", "es_libre": True,
+    }, format="json")
+    assert resp.status_code == 201
+    t = TurnoPersonal.objects.get(semana_inicio=date(2026, 6, 8), dia="Martes")
+    assert t.es_libre and t.entrada is None and t.neto == 0

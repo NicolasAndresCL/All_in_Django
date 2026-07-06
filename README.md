@@ -105,10 +105,10 @@ los enlaces `next` (así lo hace `streamlit_ui/api_client.py`).
 | `/api/clases/imprimir/?semana_inicio=` | GET | PDF con formato del horario de estudio |
 | `/api/clases/imprimir_maestro/?semana_inicio=` | GET | PDF unificado (estudio + trabajo) |
 | `/api/clases/copiar_semana/` | POST `{origen, destino}` | crea una semana basándose en otra |
-| `/api/turnos-personales/` | CRUD | bruto/neto/extra calculados |
+| `/api/turnos-personales/` | CRUD | bruto/neto/extra calculados · POST hace **upsert** por (semana, día): reescribir un día lo reemplaza |
 | `/api/turnos-personales/imprimir/?semana_inicio=` | GET | PDF con formato del horario laboral |
 | `/api/turnos-personales/copiar_semana/` | POST `{origen, destino}` | copia turnos entre semanas |
-| `/api/turnos-equipo/` | CRUD | `?semana_inicio=`, `?trabajador=` |
+| `/api/turnos-equipo/` | CRUD | `?semana_inicio=`, `?trabajador=` · POST hace **upsert** por (semana, trabajador, día) |
 | `/api/turnos-equipo/importar/` | POST (multipart `archivo`) | importa CSV/Excel |
 | `/api/turnos-equipo/imprimir/?semana_inicio=` | GET | PDF con formato de turnos del equipo |
 | `/api/tareas/` | CRUD | `?proyecto=` |
@@ -162,16 +162,21 @@ falla con un mensaje claro si `SECRET_KEY` no está definida con `DEBUG=False`. 
 ```powershell
 pytest                                  # backend: lógica, modelos, API, servicios, scraper
 pytest streamlit_ui/tests               # UI: api_client + render de cada vista (HTTP mockeado)
-pytest --cov=. --cov=streamlit_ui       # con cobertura (pytest-cov)
+# Cobertura con coverage.py (vía pytest-cov):
+pytest --cov=apps --cov=core --cov=streamlit_ui --cov-report=term-missing
 ```
 
-99 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
-impresión y copiar semanas) + cliente de la UI (api_client —incl. que sigue **todas** las
-páginas de la API—, arranque de API, dashboard y Gantt) + **smoke de las 6 vistas
-Streamlit**: cada `render()` se ejecuta con la API mockeada (`responses` +
-`streamlit.testing.v1.AppTest`) y se verifica que dibuja sin excepción, incl. los casos de
-API caída (la vista muestra el error, no revienta). Dependencias de test en
-`requirements-dev.txt` (`pytest`, `pytest-django`, `pytest-cov`, `responses`).
+109 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+impresión, copiar semanas y **upsert** de turnos) + **tests unitarios con `unittest.mock`**
+(`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la acción `importar`
+con los servicios mockeados, sin BD ni archivos) + cliente de la UI (api_client —incl. que
+sigue **todas** las páginas de la API—, arranque de API, dashboard y Gantt) + **smoke de las
+6 vistas Streamlit** (cada `render()` con la API mockeada vía `responses` +
+`streamlit.testing.v1.AppTest`, incl. casos de API caída).
+
+**Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
+Deps de test en `requirements-dev.txt` (`pytest`, `pytest-django`, `pytest-cov`, `coverage`,
+`responses`); `unittest.mock` es de la stdlib.
 
 ## Autor
 

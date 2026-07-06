@@ -78,8 +78,8 @@ def preparar_turnos_equipo(df: pd.DataFrame):
     """
     Transforma el DataFrame en filas de TurnoEquipo.
 
-    Devuelve (filas, resumen, errores). Cada fila es un dict listo para
-    update_or_create: semana_inicio(date), trabajador, dia, entrada(time|None),
+    Devuelve (filas, resumen, errores). Cada fila es un dict que `guardar_turnos`
+    hace upsert: semana_inicio(date), trabajador, dia, entrada(time|None),
     salida(time|None), es_libre(bool).
     """
     cols = {_norm(c): c for c in df.columns}
@@ -150,16 +150,22 @@ def guardar_turnos(filas, on_ok: Callable[[int], None] = None,
     guardadas = 0
     for fila in filas:
         try:
-            TurnoEquipo.objects.update_or_create(
+            # No se usa update_or_create: pasa `update_fields` a save() y entonces los
+            # campos calculados (bruto/neto/extra) no se recalcularían al actualizar.
+            # Un save() completo deja que el modelo recalcule todo.
+            turno = TurnoEquipo.objects.filter(
                 semana_inicio=fila["semana_inicio"],
                 trabajador=fila["trabajador"],
                 dia=fila["dia"],
-                defaults={
-                    "entrada": fila["entrada"],
-                    "salida": fila["salida"],
-                    "es_libre": fila["es_libre"],
-                },
+            ).first() or TurnoEquipo(
+                semana_inicio=fila["semana_inicio"],
+                trabajador=fila["trabajador"],
+                dia=fila["dia"],
             )
+            turno.entrada = fila["entrada"]
+            turno.salida = fila["salida"]
+            turno.es_libre = fila["es_libre"]
+            turno.save()
             guardadas += 1
         except Exception as exc:  # noqa: BLE001
             logger.exception("Error guardando turno %s", fila)

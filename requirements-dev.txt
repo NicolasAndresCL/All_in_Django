@@ -2,6 +2,8 @@
 -r requirements.txt
 pytest>=8.0
 pytest-django>=4.8
-pytest-cov>=5.0          # cobertura (pytest --cov)
+pytest-cov>=5.0          # integra coverage.py con pytest (pytest --cov)
+coverage>=7.0            # coverage.py (motor de cobertura; usable también standalone)
 responses>=0.25          # mock de HTTP para los tests de la UI Streamlit
 streamlit>=1.36          # necesaria para importar streamlit_ui.api_client en tests
+# unittest.mock es de la stdlib (no requiere instalación).
