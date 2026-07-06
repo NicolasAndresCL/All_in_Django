@@ -20,6 +20,15 @@ def render() -> None:
         )
         st.stop()
 
+    if not api.autenticado():
+        st.error(
+            "La API responde pero **rechaza las credenciales** (401).\n\n"
+            "Define `API_TOKEN` (variable de entorno o `.streamlit/secrets.toml`). "
+            "Crea el token con `python manage.py drf_create_token <usuario>` "
+            "o desde el admin (**Auth Token**)."
+        )
+        st.stop()
+
     st.success(f"Conectado a la API en `{api.base}`")
 
     # Conteos rápidos por recurso (una llamada por módulo).

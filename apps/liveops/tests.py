@@ -5,7 +5,6 @@ from datetime import time
 import pandas as pd
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from rest_framework.test import APIClient
 
 from . import services
 from .models import TurnoEquipo
@@ -59,8 +58,8 @@ def test_guardar_turnos_calcula_y_no_duplica():
 
 
 @pytest.mark.django_db
-def test_api_reescribir_turno_equipo_reemplaza():
-    client = APIClient()
+def test_api_reescribir_turno_equipo_reemplaza(api):
+    client = api
     base = {"semana_inicio": "2026-06-01", "trabajador": "Nico", "dia": "Lunes"}
     r1 = client.post("/api/turnos-equipo/", {**base, "entrada": "09:00:00", "salida": "18:00:00"},
                      format="json")
@@ -75,28 +74,28 @@ def test_api_reescribir_turno_equipo_reemplaza():
 
 # ─── API importar ────────────────────────────────────────────────────────────
 @pytest.mark.django_db
-def test_api_importar_csv():
+def test_api_importar_csv(api):
     csv = b"Fecha,Agente,Entrada,Salida\n2026-06-01,Barbara Vilches,13:00,22:00\n"
     archivo = SimpleUploadedFile("turnos.csv", csv, content_type="text/csv")
-    resp = APIClient().post("/api/turnos-equipo/importar/", {"archivo": archivo}, format="multipart")
+    resp = api.post("/api/turnos-equipo/importar/", {"archivo": archivo}, format="multipart")
     assert resp.status_code == 201
     assert resp.data["importadas"] == 1
     assert TurnoEquipo.objects.count() == 1
 
 
 @pytest.mark.django_db
-def test_api_importar_sin_archivo_da_400():
-    resp = APIClient().post("/api/turnos-equipo/importar/", {}, format="multipart")
+def test_api_importar_sin_archivo_da_400(api):
+    resp = api.post("/api/turnos-equipo/importar/", {}, format="multipart")
     assert resp.status_code == 400
 
 
 # ─── imprimir (PDF con formato) ──────────────────────────────────────────────
 @pytest.mark.django_db
-def test_api_imprimir_equipo():
+def test_api_imprimir_equipo(api):
     from datetime import date
     TurnoEquipo.objects.create(semana_inicio=date(2026, 6, 1), trabajador="Babi",
                                dia="Lunes", entrada=time(13, 0), salida=time(22, 0))
-    resp = APIClient().get("/api/turnos-equipo/imprimir/?semana_inicio=2026-06-01")
+    resp = api.get("/api/turnos-equipo/imprimir/?semana_inicio=2026-06-01")
     assert resp.status_code == 200
     assert resp["Content-Type"] == "application/pdf"
     assert resp.content.startswith(b"%PDF")

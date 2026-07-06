@@ -1,7 +1,6 @@
 """Tests del módulo Notas (servicios + API CRUD + exportar)."""
 
 import pytest
-from rest_framework.test import APIClient
 
 from . import services
 from .models import Nota
@@ -27,8 +26,8 @@ def test_slug_archivo(titulo, esperado):
 
 # ─── API ─────────────────────────────────────────────────────────────────────
 @pytest.mark.django_db
-def test_api_crud_nota():
-    client = APIClient()
+def test_api_crud_nota(api):
+    client = api
     resp = client.post("/api/notas/", {"titulo": "N1", "contenido": "# Hola", "formato": "md"},
                        format="json")
     assert resp.status_code == 201
@@ -38,9 +37,9 @@ def test_api_crud_nota():
 
 
 @pytest.mark.django_db
-def test_api_exportar_txt():
+def test_api_exportar_txt(api):
     nota = Nota.objects.create(titulo="Mi Nota", contenido="# Título\n**negrita**", formato="md")
-    resp = APIClient().get(f"/api/notas/{nota.id}/exportar/?fmt=txt")
+    resp = api.get(f"/api/notas/{nota.id}/exportar/?fmt=txt")
     assert resp.status_code == 200
     cuerpo = resp.content.decode("utf-8")
     assert "#" not in cuerpo and "**" not in cuerpo and "negrita" in cuerpo

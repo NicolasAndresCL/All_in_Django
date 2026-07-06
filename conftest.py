@@ -8,8 +8,35 @@ la suite no dependa de un archivo `.env`.
 
 import os
 
+import pytest
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 os.environ.setdefault("DEBUG", "True")
+
+
+@pytest.fixture
+def usuario(db):
+    """Usuario de prueba (la API exige IsAuthenticated)."""
+    from django.contrib.auth.models import User
+
+    return User.objects.create_user("tester", password="tester-pass-123")
+
+
+@pytest.fixture
+def api(usuario):
+    """APIClient autenticado para probar la API (equivale a llamar con token válido).
+
+    Limpia el cache antes de cada test: los contadores de throttling de DRF viven en
+    el cache (locmem) y PERSISTEN entre tests aunque la BD se revierta; sin limpieza,
+    una suite larga acumularía peticiones y acabaría en 429.
+    """
+    from django.core.cache import cache
+    from rest_framework.test import APIClient
+
+    cache.clear()
+    client = APIClient()
+    client.force_authenticate(usuario)
+    return client
 
 
 def pytest_configure():

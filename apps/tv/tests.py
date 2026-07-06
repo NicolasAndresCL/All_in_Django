@@ -2,7 +2,6 @@
 
 import pytest
 import requests
-from rest_framework.test import APIClient
 
 from core.exceptions import ScraperError
 
@@ -39,12 +38,12 @@ def test_scrape_error_lanza_scrapererror(monkeypatch):
         services._scrape()
 
 
-def test_api_canales_busca(monkeypatch):
+def test_api_canales_busca(monkeypatch, api):
     monkeypatch.setattr(views, "obtener_canales", lambda: [
         {"name": "Mega", "url": "u", "logo": "l"},
         {"name": "TVN Chile", "url": "u2", "logo": "l2"},
     ])
-    resp = APIClient().get("/api/tv/canales/?buscar=meg")
+    resp = api.get("/api/tv/canales/?buscar=meg")
     assert resp.status_code == 200
     assert resp.data["total"] == 1
     assert resp.data["canales"][0]["name"] == "Mega"

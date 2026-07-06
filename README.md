@@ -149,12 +149,20 @@ antes de dar altas nuevas desde la API/UI, o chocarán con "duplicate key".
 
 ## API
 
+**Toda la API exige autenticación** (`IsAuthenticated`): token en el header
+(`Authorization: Token <clave>`) o sesión (API navegable). Sin credenciales → `401`.
+El token se obtiene en `/api/token/` (POST `{username, password}`), se crea con
+`python manage.py drf_create_token <usuario>` o desde el admin (**Auth Token**).
+Quedan públicos solo `/` (panel web) y `/healthz/` (readiness). Hay **rate limiting**:
+60/min anónimos, 300/min autenticados y 10/min para `/api/token/` (configurables por env).
+
 Las listas **paginan** (`PageNumberPagination`, `PAGE_SIZE=50`): la respuesta trae
 `count`/`next`/`previous`/`results`. Un cliente que quiera todos los registros debe seguir
 los enlaces `next` (así lo hace `streamlit_ui/api_client.py`).
 
 | Endpoint | Métodos | Notas |
 |---|---|---|
+| `/api/token/` | POST `{username, password}` | devuelve el token de API (rate 10/min) |
 | `/api/clases/` | GET/POST/PUT/DELETE | `?semana_inicio=` · `horas` calculado |
 | `/api/clases/imprimir/?semana_inicio=` | GET | PDF con formato del horario de estudio |
 | `/api/clases/imprimir_maestro/?semana_inicio=` | GET | PDF unificado (estudio + trabajo) |
@@ -195,6 +203,10 @@ laboral, maestro y equipo), **Gantt** semanal (personal y de equipo), **copiar/b
 semana en otra** y **autocompletado** de proyecto/tarea en Registro de Tareas. Detalles en
 [`streamlit_ui/README.md`](streamlit_ui/README.md).
 
+Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
+`.streamlit/secrets.toml`); sin él, la vista de Inicio avisa "rechaza las credenciales
+(401)" con las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
+
 ## Management commands
 
 ```powershell
@@ -207,9 +219,21 @@ python manage.py login_menu                                     # logins Cisco/S
 ## Configuración / seguridad (pydantic-settings)
 
 `core/conf.py` define un `Settings(BaseSettings)` tipado que lee `.env` y **valida**:
-falla con un mensaje claro si `SECRET_KEY` no está definida con `DEBUG=False`. Variables:
-`SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CISCO_USER/PASS`, `SENCE_RUT`, `CLAVE_UNICA`,
-`ALL_IN_ONE_DATA`. El `.env` no se versiona (`.gitignore`).
+falla con un mensaje claro si `SECRET_KEY` no está definida —o es **débil** (< 50 chars
+o < 5 distintos)— con `DEBUG=False`. Variables: `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`,
+`CSRF_TRUSTED_ORIGINS`, `SECURE_HTTPS`, `THROTTLE_ANON/USER/TOKEN`, `DATABASE_URL`,
+`CISCO_USER/PASS`, `SENCE_RUT`, `CLAVE_UNICA`, `ALL_IN_ONE_DATA`. El `.env` no se
+versiona (`.gitignore`).
+
+Endurecimiento aplicado:
+- **Autenticación por token** en toda la API (`IsAuthenticated` + `TokenAuthentication`);
+  solo `/` y `/healthz/` son públicos. Login por token en `/api/token/`.
+- **Rate limiting** (DRF): 60/min anónimos · 300/min autenticados · 10/min en `/api/token/`
+  (frena fuerza bruta). Configurable vía `THROTTLE_*`.
+- **`SECURE_HTTPS=True`** (solo detrás de TLS real) activa: `SECURE_SSL_REDIRECT` (con
+  `/healthz/` exento para los healthchecks), HSTS (1 año, subdominios, preload) y cookies
+  `Secure` de sesión/CSRF. Con esto `manage.py check --deploy` queda **sin warnings**.
+  En local/Compose se deja apagado porque se sirve HTTP plano.
 
 ## Tests
 
@@ -220,13 +244,17 @@ pytest streamlit_ui/tests               # UI: api_client + render de cada vista 
 pytest --cov=apps --cov=core --cov=streamlit_ui --cov-report=term-missing
 ```
 
-110 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
-impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **tests unitarios
-con `unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la
+130 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **seguridad**
+(`test_seguridad.py`: 401 sin token, obtención/uso del token, rate limit del login con 429,
+validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitarios con
+`unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la
 acción `importar` con los servicios mockeados, sin BD ni archivos) + cliente de la UI (api_client
-—incl. que sigue **todas** las páginas de la API—, arranque de API, dashboard y Gantt) + **smoke
-de las 6 vistas Streamlit** (cada `render()` con la API mockeada vía `responses` +
-`streamlit.testing.v1.AppTest`, incl. casos de API caída).
+—incl. que sigue **todas** las páginas de la API y envía el header `Authorization: Token`—,
+arranque de API, dashboard y Gantt) + **smoke de las 6 vistas Streamlit** (cada `render()` con
+la API mockeada vía `responses` + `streamlit.testing.v1.AppTest`, incl. casos de API caída).
+Los tests de API usan la fixture **`api`** (conftest raíz): `APIClient` autenticado que además
+limpia el cache de throttling entre tests.
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
 Deps de test en `requirements-dev.txt` (`pytest`, `pytest-django`, `pytest-cov`, `coverage`,

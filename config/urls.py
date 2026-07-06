@@ -10,6 +10,7 @@ from apps.notas.views import NotaViewSet
 from apps.tareas.views import RegistroViewSet
 from apps.extras.web import healthz, inicio
 from apps.tv.views import CanalesTVView
+from core.api import ObtenerToken
 
 router = DefaultRouter()
 router.register("clases", ClaseViewSet, basename="clase")
@@ -22,6 +23,7 @@ urlpatterns = [
     path("", inicio, name="inicio"),
     path("healthz/", healthz, name="healthz"),  # readiness para Compose/K8s
     path("admin/", admin.site.urls),
+    path("api/token/", ObtenerToken.as_view(), name="api-token"),  # login por token
     path("api/tv/canales/", CanalesTVView.as_view(), name="tv-canales"),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),  # login para la API navegable

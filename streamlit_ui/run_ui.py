@@ -118,7 +118,10 @@ def main() -> int:
             sys.executable, "-m", "streamlit", "run", str(app),
             "--server.port", str(puerto),
         ]
-        return subprocess.run(cmd).returncode
+        # cwd=streamlit_ui/: Streamlit resuelve .streamlit/secrets.toml respecto del
+        # directorio de trabajo; así encuentra el API_TOKEN aunque run_ui.py se invoque
+        # desde la raíz del proyecto.
+        return subprocess.run(cmd, cwd=str(app.parent)).returncode
     finally:
         if api_proc is not None:
             print("[API] Deteniendo Django...")

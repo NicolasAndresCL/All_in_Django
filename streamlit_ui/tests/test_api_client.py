@@ -13,6 +13,31 @@ def api():
     return APIClient(base=BASE)
 
 
+# ─── autenticación ───────────────────────────────────────────────────────────
+def test_token_pone_header_authorization():
+    cliente = APIClient(base=BASE, token="abc123")
+    assert cliente.session.headers["Authorization"] == "Token abc123"
+
+
+def test_sin_token_no_hay_header(api):
+    assert "Authorization" not in api.session.headers
+
+
+def test_token_de_env(monkeypatch):
+    monkeypatch.setenv("API_TOKEN", "desde-env")
+    cliente = APIClient(base=BASE)
+    assert cliente.session.headers["Authorization"] == "Token desde-env"
+
+
+@responses.activate
+def test_ping_true_con_401_y_autenticado_false():
+    # La API viva pero sin token: ping() True (está arriba), autenticado() False.
+    responses.get(f"{BASE}/", json={"detail": "no auth"}, status=401)
+    cliente = APIClient(base=BASE)
+    assert cliente.ping() is True
+    assert cliente.autenticado() is False
+
+
 # ─── list ────────────────────────────────────────────────────────────────────
 @responses.activate
 def test_list_desempaqueta_paginacion(api):

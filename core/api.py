@@ -2,13 +2,23 @@
 core/api.py — Utilidades compartidas para la capa REST.
 
 `ExportMixin` añade una acción `GET .../exportar/?formato=excel|pdf` a cualquier
-ViewSet, reutilizando `core.export`. Evita repetir la lógica de exportación.
+ViewSet, reutilizando `core.export`. `ObtenerToken` expone el login por token con
+rate limit propio.
 """
 
 from django.http import HttpResponse
+from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.decorators import action
+from rest_framework.throttling import ScopedRateThrottle
 
 from core.export import generar_excel, generar_pdf
+
+
+class ObtenerToken(ObtainAuthToken):
+    """POST {username, password} → {token}. Con scope 'token' (rate bajo: frena fuerza bruta)."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "token"
 
 _TIPOS = {
     "excel": ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),

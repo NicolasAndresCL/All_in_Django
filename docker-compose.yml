@@ -54,6 +54,11 @@ services:
     environment:
       # Único acoplamiento UI↔API: la URL base de la API en la red de Compose.
       API_BASE: http://api:8000/api
+      # La API exige token (IsAuthenticated). Créalo tras el primer 'up':
+      #   docker compose --env-file .env.docker exec api python manage.py createsuperuser
+      #   docker compose --env-file .env.docker exec api python manage.py drf_create_token <usuario>
+      # y pon el valor como API_TOKEN en .env.docker.
+      API_TOKEN: ${API_TOKEN:-}
     depends_on:
       api:
         condition: service_healthy

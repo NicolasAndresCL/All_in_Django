@@ -3,7 +3,6 @@
 from datetime import date, timedelta
 
 import pytest
-from rest_framework.test import APIClient
 
 from .models import Registro
 from .services import calcular_racha, calcular_resumen
@@ -23,8 +22,8 @@ def test_registro_horas_property():
 
 
 @pytest.mark.django_db
-def test_api_crear_y_resumen():
-    client = APIClient()
+def test_api_crear_y_resumen(api):
+    client = api
     client.post("/api/tareas/", {"fecha": "2026-06-01", "proyecto": "A", "tarea": "x",
                                  "duracion": "01:30:00"}, format="json")
     client.post("/api/tareas/", {"fecha": "2026-06-02", "proyecto": "A", "tarea": "y",
@@ -42,10 +41,10 @@ def test_api_crear_y_resumen():
 
 
 @pytest.mark.django_db
-def test_api_filtra_por_proyecto():
+def test_api_filtra_por_proyecto(api):
     Registro.objects.create(fecha=date(2026, 6, 1), proyecto="A", tarea="t", duracion=timedelta(hours=1))
     Registro.objects.create(fecha=date(2026, 6, 1), proyecto="B", tarea="t", duracion=timedelta(hours=1))
-    resp = APIClient().get("/api/tareas/?proyecto=A")
+    resp = api.get("/api/tareas/?proyecto=A")
     assert resp.data["count"] == 1
 
 
@@ -91,10 +90,10 @@ def test_calcular_resumen_metricas_y_series():
 
 
 @pytest.mark.django_db
-def test_api_resumen_incluye_dashboard():
+def test_api_resumen_incluye_dashboard(api):
     Registro.objects.create(fecha=date(2026, 6, 1), proyecto="A", tarea="x",
                             duracion=timedelta(hours=2))
-    data = APIClient().get("/api/tareas/resumen/").data
+    data = api.get("/api/tareas/resumen/").data
     # Claves nuevas del dashboard presentes.
     for clave in ("racha_dias", "promedio_diario", "promedio_semanal",
                   "por_tarea", "por_dia", "por_semana", "por_dia_semana"):

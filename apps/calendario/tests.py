@@ -3,7 +3,6 @@
 from datetime import date, time
 
 import pytest
-from rest_framework.test import APIClient
 
 from .models import Clase, TurnoPersonal
 from .services import copiar_clases, copiar_turnos_personales
@@ -33,8 +32,8 @@ def test_turno_personal_libre():
 
 
 @pytest.mark.django_db
-def test_api_crear_y_listar_clase():
-    client = APIClient()
+def test_api_crear_y_listar_clase(api):
+    client = api
     resp = client.post("/api/clases/", {
         "semana_inicio": "2026-06-08", "dia": "Lunes", "asignatura": "Mate",
         "entrada": "08:30:00", "salida": "10:00:00",
@@ -48,41 +47,41 @@ def test_api_crear_y_listar_clase():
 
 
 @pytest.mark.django_db
-def test_api_exportar_excel():
+def test_api_exportar_excel(api):
     Clase.objects.create(semana_inicio=date(2026, 6, 8), dia="Lunes",
                          asignatura="Mate", entrada=time(8, 30), salida=time(10, 0))
-    resp = APIClient().get("/api/clases/exportar/?formato=excel")
+    resp = api.get("/api/clases/exportar/?formato=excel")
     assert resp.status_code == 200
     assert resp["Content-Type"].startswith("application/vnd.openxmlformats")
 
 
 # ─── imprimir (PDF con formato) ──────────────────────────────────────────────
 @pytest.mark.django_db
-def test_api_imprimir_estudio():
+def test_api_imprimir_estudio(api):
     Clase.objects.create(semana_inicio=date(2026, 6, 8), dia="Lunes",
                          asignatura="Anatomía", entrada=time(8, 30), salida=time(10, 0))
-    resp = APIClient().get("/api/clases/imprimir/?semana_inicio=2026-06-08")
+    resp = api.get("/api/clases/imprimir/?semana_inicio=2026-06-08")
     assert resp.status_code == 200
     assert resp["Content-Type"] == "application/pdf"
     assert resp.content.startswith(b"%PDF")
 
 
 @pytest.mark.django_db
-def test_api_imprimir_laboral():
+def test_api_imprimir_laboral(api):
     TurnoPersonal.objects.create(semana_inicio=date(2026, 6, 8), dia="Lunes",
                                  entrada=time(18, 0), salida=time(23, 0))
-    resp = APIClient().get("/api/turnos-personales/imprimir/?semana_inicio=2026-06-08")
+    resp = api.get("/api/turnos-personales/imprimir/?semana_inicio=2026-06-08")
     assert resp.status_code == 200
     assert resp.content.startswith(b"%PDF")
 
 
 @pytest.mark.django_db
-def test_api_imprimir_maestro_combina_estudio_y_trabajo():
+def test_api_imprimir_maestro_combina_estudio_y_trabajo(api):
     Clase.objects.create(semana_inicio=date(2026, 6, 8), dia="Lunes",
                          asignatura="Mate", entrada=time(8, 0), salida=time(10, 0))
     TurnoPersonal.objects.create(semana_inicio=date(2026, 6, 8), dia="Lunes",
                                  entrada=time(18, 0), salida=time(23, 0))
-    resp = APIClient().get("/api/clases/imprimir_maestro/?semana_inicio=2026-06-08")
+    resp = api.get("/api/clases/imprimir_maestro/?semana_inicio=2026-06-08")
     assert resp.status_code == 200
     assert resp.content.startswith(b"%PDF")
 
@@ -113,10 +112,10 @@ def test_copiar_turnos_recalcula_en_destino():
 
 
 @pytest.mark.django_db
-def test_api_copiar_semana_clases():
+def test_api_copiar_semana_clases(api):
     Clase.objects.create(semana_inicio=date(2026, 6, 1), dia="Lunes",
                          asignatura="X", entrada=time(8, 0), salida=time(9, 0))
-    resp = APIClient().post("/api/clases/copiar_semana/",
+    resp = api.post("/api/clases/copiar_semana/",
                             {"origen": "2026-06-01", "destino": "2026-06-08"}, format="json")
     assert resp.status_code == 201
     assert resp.data["copiadas"] == 1
@@ -124,15 +123,15 @@ def test_api_copiar_semana_clases():
 
 
 @pytest.mark.django_db
-def test_api_copiar_semana_sin_datos_da_400():
-    resp = APIClient().post("/api/clases/copiar_semana/", {"origen": "2026-06-01"}, format="json")
+def test_api_copiar_semana_sin_datos_da_400(api):
+    resp = api.post("/api/clases/copiar_semana/", {"origen": "2026-06-01"}, format="json")
     assert resp.status_code == 400
 
 
 # ─── upsert de turnos personales (reescribir un día lo reemplaza) ─────────────
 @pytest.mark.django_db
-def test_api_reescribir_turno_reemplaza_no_falla():
-    client = APIClient()
+def test_api_reescribir_turno_reemplaza_no_falla(api):
+    client = api
     # Primer registro del Lunes (turno 18–23).
     r1 = client.post("/api/turnos-personales/", {
         "semana_inicio": "2026-06-08", "dia": "Lunes",
@@ -156,8 +155,8 @@ def test_api_reescribir_turno_reemplaza_no_falla():
 
 
 @pytest.mark.django_db
-def test_api_reescribir_turno_como_libre():
-    client = APIClient()
+def test_api_reescribir_turno_como_libre(api):
+    client = api
     client.post("/api/turnos-personales/", {
         "semana_inicio": "2026-06-08", "dia": "Martes",
         "entrada": "18:00:00", "salida": "23:00:00",

@@ -22,6 +22,17 @@ ALLOWED_HOSTS = env.ALLOWED_HOSTS
 CSRF_TRUSTED_ORIGINS = env.CSRF_TRUSTED_ORIGINS
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# Endurecimiento HTTPS (toggle explícito SECURE_HTTPS; ver core/conf.py: no va atado a
+# DEBUG porque Compose sirve HTTP plano con DEBUG=False). Cubre security.W004/W008/W012/W016.
+if env.SECURE_HTTPS:
+    SECURE_SSL_REDIRECT = True
+    SECURE_REDIRECT_EXEMPT = [r"^healthz/$"]  # los healthchecks internos van por HTTP
+    SECURE_HSTS_SECONDS = 31536000  # 1 año
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 # ─── Apps ───────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -31,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework.authtoken",  # tokens de API (modelo Token; se crean en admin o CLI)
     "apps.calendario",
     "apps.liveops",
     "apps.tareas",
@@ -86,10 +98,26 @@ else:
 
 # ─── DRF ────────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # Toda la API exige autenticación: token (clientes como la UI Streamlit, header
+    # "Authorization: Token <clave>") o sesión (API navegable/admin en el navegador).
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
     "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    # Rate limiting (rates configurables por env; ver core/conf.py).
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": env.THROTTLE_ANON,
+        "user": env.THROTTLE_USER,
+        "token": env.THROTTLE_TOKEN,  # scope del endpoint /api/token/
+    },
 }
 
 # ─── Password validators ─────────────────────────────────────────────────────

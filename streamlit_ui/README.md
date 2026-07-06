@@ -130,10 +130,24 @@ para lo nuevo (opción "➕ Nuevo…").
 - **Gantt semanal** (`gantt.py`, Plotly): vista personal (estudio + trabajo superpuestos) y
   de equipo (4 trabajadores). Se construye en la UI con los datos de la API.
 
+## Autenticación (API_TOKEN)
+
+La API exige token (`IsAuthenticated`): el cliente envía `Authorization: Token <clave>`.
+El token se resuelve **`st.secrets` > variable de entorno `API_TOKEN`** y se crea con:
+
+```powershell
+python manage.py drf_create_token <usuario>     # o en el admin: Auth Token
+```
+
+Opciones para proveerlo:
+- `streamlit_ui/.streamlit/secrets.toml` → `API_TOKEN = "..."` (recomendado en local;
+  gitignored). `run_ui.py` lanza Streamlit con cwd en `streamlit_ui/` para que lo encuentre.
+- Variable de entorno `API_TOKEN` (así lo recibe el contenedor de la UI en Compose).
+
+Sin token, la vista de Inicio muestra el aviso "rechaza las credenciales (401)" con estas
+instrucciones (la API se considera viva aunque devuelva 401: `ping()` vs `autenticado()`).
+
 ## Notas
 
-- La API navegable de DRF no exige autenticación por defecto, así que el cliente
-  funciona sin token. Si añades permisos/JWT al backend, hay que extender
-  `api_client.py` con la cabecera `Authorization`.
 - Los módulos **Reloj** y **Logins** del backend son management commands de escritorio
   (Selenium/tkinter), no endpoints HTTP: no se exponen en esta UI.

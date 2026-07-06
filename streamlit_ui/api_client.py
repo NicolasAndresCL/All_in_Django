@@ -28,6 +28,18 @@ def _base_url() -> str:
     return os.environ.get("API_BASE", "http://localhost:8000/api").rstrip("/")
 
 
+def _token() -> str:
+    """Token de la API (secrets > entorno). La API exige autenticación (IsAuthenticated):
+    sin token, todas las llamadas devuelven 401. Se crea con
+    `python manage.py drf_create_token <usuario>` o desde el admin (Auth Token)."""
+    try:
+        if "API_TOKEN" in st.secrets:  # type: ignore[operator]
+            return str(st.secrets["API_TOKEN"])
+    except Exception:
+        pass
+    return os.environ.get("API_TOKEN", "")
+
+
 class APIError(RuntimeError):
     """Error de la API con el detalle que devolvió el backend (si lo hay)."""
 
@@ -40,10 +52,13 @@ class APIError(RuntimeError):
 class APIClient:
     """Wrapper fino sobre `requests.Session` con helpers CRUD para la API DRF."""
 
-    def __init__(self, base: str | None = None, timeout: int = 15):
+    def __init__(self, base: str | None = None, timeout: int = 15, token: str | None = None):
         self.base = (base or _base_url()).rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        token = token if token is not None else _token()
+        if token:
+            self.session.headers["Authorization"] = f"Token {token}"
 
     # -- infraestructura ---------------------------------------------------
     def _url(self, path: str) -> str:
@@ -149,7 +164,15 @@ class APIClient:
         )
 
     def ping(self) -> bool:
-        """True si la API responde (usa la raíz del router DRF)."""
+        """True si la API está viva (aunque devuelva 401 por falta de token)."""
+        try:
+            resp = self.session.get(self._url("/"), timeout=5)
+            return resp.status_code < 500
+        except requests.RequestException:
+            return False
+
+    def autenticado(self) -> bool:
+        """True si la API acepta las credenciales actuales (200 en la raíz del router)."""
         try:
             resp = self.session.get(self._url("/"), timeout=5)
             return resp.ok
