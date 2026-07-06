@@ -258,7 +258,9 @@ limpia el cache de throttling entre tests.
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
 Deps de test en `requirements-dev.txt` (`pytest`, `pytest-django`, `pytest-cov`, `coverage`,
-`responses`); `unittest.mock` es de la stdlib.
+`responses`), que **incluye también `streamlit_ui/requirements.txt`**: los tests de la UI
+importan `gantt.py` y las vistas (usan plotly) y sin esas deps la recolección de pytest
+falla con exit 2 — fue la causa del primer fallo de CI. `unittest.mock` es de la stdlib.
 
 ## Autor
 
