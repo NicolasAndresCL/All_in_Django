@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aid.fullname" . }}-ui
+  labels:
+    {{- include "aid.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ui
+  template:
+    metadata:
+      labels:
+        {{- include "aid.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ui
+    spec:
+      containers:
+        - name: ui
+          image: {{ include "aid.uiImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # Único acoplamiento UI↔API: la URL del Service de la API.
+            - name: API_BASE
+              value: http://{{ include "aid.fullname" . }}-api:8000/api
+          ports:
+            - containerPort: 8501
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}

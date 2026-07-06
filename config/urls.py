@@ -8,7 +8,7 @@ from apps.calendario.views import ClaseViewSet, TurnoPersonalViewSet
 from apps.liveops.views import TurnoEquipoViewSet
 from apps.notas.views import NotaViewSet
 from apps.tareas.views import RegistroViewSet
-from apps.extras.web import inicio
+from apps.extras.web import healthz, inicio
 from apps.tv.views import CanalesTVView
 
 router = DefaultRouter()
@@ -20,6 +20,7 @@ router.register("notas", NotaViewSet, basename="nota")
 
 urlpatterns = [
     path("", inicio, name="inicio"),
+    path("healthz/", healthz, name="healthz"),  # readiness para Compose/K8s
     path("admin/", admin.site.urls),
     path("api/tv/canales/", CanalesTVView.as_view(), name="tv-canales"),
     path("api/", include(router.urls)),

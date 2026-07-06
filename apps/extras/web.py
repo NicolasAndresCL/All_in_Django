@@ -1,11 +1,27 @@
-"""Vista web básica (templates): panel de inicio con resumen."""
+"""Vista web básica (templates): panel de inicio con resumen + healthcheck."""
 
+from django.db import connection
+from django.http import JsonResponse
 from django.shortcuts import render
 
 from apps.calendario.models import Clase, TurnoPersonal
 from apps.liveops.models import TurnoEquipo
 from apps.notas.models import Nota
 from apps.tareas.models import Registro
+
+
+def healthz(request):
+    """Readiness para orquestadores (Compose/K8s): 200 si la BD responde, 503 si no.
+
+    Más barato y explícito que golpear `/api/`. Comprueba la conexión con un SELECT 1.
+    """
+    try:
+        with connection.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+    except Exception as exc:  # noqa: BLE001
+        return JsonResponse({"status": "error", "db": str(exc)}, status=503)
+    return JsonResponse({"status": "ok"})
 
 
 def inicio(request):

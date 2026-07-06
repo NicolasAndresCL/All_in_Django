@@ -23,7 +23,18 @@ fixtures/
 # Secretos / config local
 .env
 .env.*.local
+# env de docker compose (la plantilla .env.docker.example sí se versiona)
+.env.docker
 .streamlit/secrets.toml
+
+# IaC — estado y secretos de Terraform (los .tf y *.example SÍ se versionan)
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
 
 # Cobertura de tests
 .coverage

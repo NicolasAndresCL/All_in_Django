@@ -10,3 +10,5 @@ selenium>=4.20
 cachetools>=5.3
 dj-database-url>=2.1        # parsea DATABASE_URL (SQLite por defecto, Postgres si se define)
 psycopg[binary]>=3.1        # driver PostgreSQL (binary: sin compilar en Windows)
+gunicorn>=23.0             # servidor WSGI de producción (Linux/contenedores)
+whitenoise>=6.7            # sirve estáticos (admin/DRF) sin nginx

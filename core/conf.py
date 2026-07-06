@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # NoDecode: pydantic-settings NO intenta parsear JSON; el validador de abajo
     # acepta lista o cadena separada por comas.
     ALLOWED_HOSTS: Annotated[list[str], NoDecode] = ["127.0.0.1", "localhost"]
+    # Orígenes de confianza para CSRF (admin/DRF tras proxy/https). Lista o CSV, como
+    # ALLOWED_HOSTS. Ej.: "https://midominio.cl,https://www.midominio.cl".
+    CSRF_TRUSTED_ORIGINS: Annotated[list[str], NoDecode] = []
 
     # Base de datos: si se define, `config.settings` la parsea con dj-database-url
     # (p. ej. postgres://user:pass@localhost:5432/all_in_django). Vacía/None → SQLite local.
@@ -46,12 +49,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("ALLOWED_HOSTS", mode="before")
+    @field_validator("ALLOWED_HOSTS", "CSRF_TRUSTED_ORIGINS", mode="before")
     @classmethod
-    def _split_hosts(cls, v):
+    def _split_lista(cls, v):
         """Acepta lista JSON o cadena separada por comas en el .env."""
         if isinstance(v, str) and not v.strip().startswith("["):
-            return [h.strip() for h in v.split(",") if h.strip()]
+            return [x.strip() for x in v.split(",") if x.strip()]
         return v
 
     @model_validator(mode="after")

@@ -8,8 +8,10 @@ tests con **pytest-django**.
 ## Stack
 
 Python 3.14 · Django 6 · DRF · pydantic-settings · pandas/openpyxl · requests/beautifulsoup4 ·
-fpdf2 · selenium · cachetools · dj-database-url · psycopg. Base de datos: **SQLite**
-(`db.sqlite3`) por defecto, o **PostgreSQL** vía `DATABASE_URL` (ver [Base de datos](#base-de-datos)).
+fpdf2 · selenium · cachetools · dj-database-url · psycopg · gunicorn · whitenoise. Base de datos:
+**SQLite** (`db.sqlite3`) por defecto, o **PostgreSQL** vía `DATABASE_URL` (ver
+[Base de datos](#base-de-datos)). Despliegue declarativo: **Docker Compose · GitHub Actions ·
+Terraform · Helm** (ver [Despliegue e IaC](#despliegue-e-iac)).
 
 ## Estructura
 
@@ -36,7 +38,12 @@ all_in_django/
 ├── streamlit_ui/            # UI Streamlit (cliente HTTP de la API) — ver su README
 │   ├── app.py  api_client.py  run_ui.py  run_app.bat
 │   ├── views/               # una vista por dominio (tareas: dashboard con 6 gráficos Plotly)
+│   ├── Dockerfile           # imagen de la UI
 │   └── tests/               # api_client, run_ui, dashboard y smoke de cada vista (responses + AppTest)
+├── Dockerfile  docker/entrypoint.sh  docker-compose.yml  .dockerignore  .env.docker.example
+├── .github/workflows/       # ci.yml (tests+build) · docker-publish.yml (GHCR)
+├── infra/terraform/         # AWS EC2 + RDS (skeleton)
+├── infra/helm/all-in-django/ # chart de Kubernetes
 ├── .env / .env.example  requirements.txt  requirements-dev.txt  pytest.ini  conftest.py
 ```
 
@@ -57,6 +64,53 @@ python manage.py runserver
 
 - API navegable: `http://127.0.0.1:8000/api/`
 - Admin: `http://127.0.0.1:8000/admin/`
+
+> ¿Prefieres no instalar nada localmente? Salta a [Despliegue e IaC](#despliegue-e-iac) y usa
+> `docker compose up`.
+
+## Despliegue e IaC
+
+Toda la infraestructura está declarada como código. La orquestación imperativa
+(`streamlit_ui/run_ui.py`) se reemplaza por artefactos declarativos por capa:
+
+| Capa | Artefacto | Qué levanta |
+|---|---|---|
+| Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root), `streamlit_ui/Dockerfile` (UI) | contenedores de API y UI |
+| Orquestación local | `docker-compose.yml` | Postgres + API + UI (healthchecks + `depends_on`) |
+| CI | `.github/workflows/ci.yml`, `docker-publish.yml` | tests+cobertura, build y push a GHCR |
+| Nube | `infra/terraform/` (AWS EC2 + RDS) | infra en la nube (skeleton) |
+| Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres/Ingress) |
+
+### Docker Compose (forma recomendada de levantar todo)
+
+```bash
+cp .env.docker.example .env.docker      # define SECRET_KEY (y credenciales de Postgres)
+docker compose --env-file .env.docker up -d      # db (healthy) → api (migra) → ui
+
+# Semilla de datos, una sola vez (monta fixtures/, excluido de la imagen):
+docker compose --env-file .env.docker run --rm -v "${PWD}/fixtures:/app/fixtures" api \
+    python manage.py loaddata fixtures/datos_sqlite.json
+```
+
+> Se pasa `--env-file .env.docker` para que Compose no lea el `.env` de Django (su `SECRET_KEY`
+> con `$` provoca warnings de interpolación inofensivos).
+
+- API/Admin: `http://localhost:8000/` · healthcheck `http://localhost:8000/healthz/`
+- UI Streamlit: `http://localhost:8501/`
+- `docker compose down` conserva los datos (volumen `pgdata`).
+
+La API se sirve con **gunicorn** y sirve sus estáticos (admin/DRF) con **WhiteNoise**. El
+único acoplamiento UI↔API es el env `API_BASE` (en Compose, `http://api:8000/api`). El
+`collectstatic` corre en el build de la imagen con un `SECRET_KEY` throwaway (el gate de
+`core/conf.py` exige `SECRET_KEY` si `DEBUG=False`).
+
+### Terraform (AWS) y Helm (Kubernetes)
+
+Skeletons listos para `plan`/`lint`; ver [`infra/terraform/README.md`](infra/terraform/README.md)
+y [`infra/helm/all-in-django/README.md`](infra/helm/all-in-django/README.md). Terraform
+provisiona **RDS Postgres + EC2** (corre compose contra el RDS); el chart de Helm despliega
+API/UI/Postgres con migraciones en un `initContainer` y probes a `/healthz/`. ⚠️ `terraform
+apply` crea recursos de pago.
 
 ## Base de datos
 
@@ -166,12 +220,12 @@ pytest streamlit_ui/tests               # UI: api_client + render de cada vista 
 pytest --cov=apps --cov=core --cov=streamlit_ui --cov-report=term-missing
 ```
 
-109 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
-impresión, copiar semanas y **upsert** de turnos) + **tests unitarios con `unittest.mock`**
-(`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la acción `importar`
-con los servicios mockeados, sin BD ni archivos) + cliente de la UI (api_client —incl. que
-sigue **todas** las páginas de la API—, arranque de API, dashboard y Gantt) + **smoke de las
-6 vistas Streamlit** (cada `render()` con la API mockeada vía `responses` +
+110 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **tests unitarios
+con `unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la
+acción `importar` con los servicios mockeados, sin BD ni archivos) + cliente de la UI (api_client
+—incl. que sigue **todas** las páginas de la API—, arranque de API, dashboard y Gantt) + **smoke
+de las 6 vistas Streamlit** (cada `render()` con la API mockeada vía `responses` +
 `streamlit.testing.v1.AppTest`, incl. casos de API caída).
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.

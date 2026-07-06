@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "aid.fullname" . }}-api
+  labels:
+    {{- include "aid.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "aid.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      # migrate corre antes de servir (equivale al migrate del entrypoint del contenedor).
+      # Idempotente; con replicas>1 se ejecuta por pod (aceptable a esta escala).
+      initContainers:
+        - name: migrate
+          image: {{ include "aid.apiImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "aid.fullname" . }}-config
+            - secretRef:
+                name: {{ include "aid.fullname" . }}-secret
+      containers:
+        - name: api
+          image: {{ include "aid.apiImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "aid.fullname" . }}-config
+            - secretRef:
+                name: {{ include "aid.fullname" . }}-secret
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /healthz/
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz/
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}

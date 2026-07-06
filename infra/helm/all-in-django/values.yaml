@@ -1,0 +1,45 @@
+# Valores por defecto del chart. Sobreescribe con -f valores.yaml o --set.
+
+image:
+  registry: ghcr.io
+  owner: nicolasandrescl        # ghcr.io/<owner>/all-in-django-{api,ui}
+  tag: latest
+  pullPolicy: IfNotPresent
+
+api:
+  replicas: 1
+  resources: {}
+  # Probes → /healthz/ (SELECT 1). Ajusta si tu clúster es lento.
+
+ui:
+  replicas: 1
+  resources: {}
+
+# Config no sensible (va a un ConfigMap).
+config:
+  DEBUG: "False"
+  ALLOWED_HOSTS: "*"
+  CSRF_TRUSTED_ORIGINS: ""
+
+# Secretos (van a un Secret). Pásalos con --set o un Secret pre-creado.
+secret:
+  # SECRET_KEY de Django (obligatorio con DEBUG=False).
+  secretKey: ""
+  # DATABASE_URL: si postgres.enabled=true se calcula solo; si no, ponla aquí.
+  databaseUrl: ""
+
+# Postgres embebido (StatefulSet). En producción, considera una base gestionada
+# (postgres.enabled=false) e inyecta secret.databaseUrl.
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  user: app
+  password: app
+  database: all_in_django
+  storage: 5Gi
+
+ingress:
+  enabled: false
+  className: ""
+  host: all-in-django.local
+  annotations: {}

@@ -110,3 +110,11 @@ def test_vista_inicio_responde(client: Client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"Horas" in resp.content  # las métricas se renderizan en el template
+
+
+@pytest.mark.django_db
+def test_healthz_ok(client: Client):
+    """El healthcheck responde 200 con {"status": "ok"} cuando la BD contesta."""
+    resp = client.get("/healthz/")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}

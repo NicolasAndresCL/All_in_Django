@@ -1,0 +1,8 @@
+# Contexto de build de la imagen UI (streamlit_ui/).
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+run_ui.py
+run_app.bat
+*.md

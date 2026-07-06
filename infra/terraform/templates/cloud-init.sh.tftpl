@@ -1,0 +1,44 @@
+#!/bin/bash
+# cloud-init de la EC2: instala Docker y levanta la app (imágenes de GHCR) contra el RDS.
+set -euxo pipefail
+
+# --- Docker ---
+apt-get update -y
+apt-get install -y ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+mkdir -p /opt/all-in-django
+cd /opt/all-in-django
+
+# --- Env de producción (RDS gestionado; sin servicio 'db' local) ---
+cat > .env.docker <<EOF
+SECRET_KEY=${secret_key}
+DEBUG=False
+ALLOWED_HOSTS=${allowed_hosts}
+DATABASE_URL=${database_url}
+EOF
+
+# --- Compose de producción: imágenes de GHCR, sin Postgres (usa el RDS) ---
+cat > docker-compose.yml <<'EOF'
+services:
+  api:
+    image: ghcr.io/${images_owner}/all-in-django-api:${image_tag}
+    env_file: .env.docker
+    ports: ["8000:8000"]
+    restart: unless-stopped
+  ui:
+    image: ghcr.io/${images_owner}/all-in-django-ui:${image_tag}
+    environment:
+      API_BASE: http://api:8000/api
+    depends_on: [api]
+    ports: ["8501:8501"]
+    restart: unless-stopped
+EOF
+
+docker compose pull
+docker compose up -d

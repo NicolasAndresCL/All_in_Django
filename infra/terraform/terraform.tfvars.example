@@ -1,0 +1,18 @@
+# Copia a  terraform.tfvars  y completa. (terraform.tfvars está en .gitignore.)
+
+aws_region    = "us-east-1"
+instance_type = "t3.small"
+
+# Genera con: python -c "import secrets; print(secrets.token_urlsafe(50))"
+secret_key = "cambia-esto-por-una-clave-larga-y-aleatoria"
+
+# Dominio o IP pública; usa "*" solo para pruebas.
+allowed_hosts = "*"
+
+# Owner de las imágenes en GHCR y tag a desplegar.
+images_owner = "nicolasandrescl"
+image_tag    = "latest"
+
+# Opcional: key pair EC2 para SSH y tu IP para restringir el acceso.
+# ssh_key_name     = "mi-keypair"
+# ssh_ingress_cidr = "TU.IP.PUBLICA.0/32"

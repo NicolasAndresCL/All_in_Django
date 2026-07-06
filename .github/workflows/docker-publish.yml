@@ -1,0 +1,55 @@
+name: Publicar imágenes
+
+# Publica las imágenes en GHCR al crear un release o un tag vX.Y.Z.
+# Usa el GITHUB_TOKEN (no requiere secretos extra); el paquete queda en
+# ghcr.io/<owner>/all-in-django-{api,ui}.
+
+on:
+  release:
+    types: [published]
+  push:
+    tags: ["v*.*.*"]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: all-in-django-api
+            context: .
+          - image: all-in-django-ui
+            context: ./streamlit_ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadatos (tags/labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

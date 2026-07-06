@@ -1,0 +1,65 @@
+# Orquestación declarativa local: Postgres + API Django + UI Streamlit.
+# Reemplaza el arranque imperativo de streamlit_ui/run_ui.py.
+#
+# Usa siempre --env-file .env.docker (evita que compose lea el .env de Django de la raíz,
+# cuyo SECRET_KEY con '$' dispara warnings de interpolación):
+#
+#   docker compose --env-file .env.docker up -d     # db → api → ui (en orden por health)
+#   docker compose --env-file .env.docker logs -f api
+#   docker compose --env-file .env.docker down      # conserva el volumen pgdata
+#
+# Semilla de datos (una sola vez, tras el primer 'up'):
+#   docker compose --env-file .env.docker run --rm -v "${PWD}/fixtures:/app/fixtures" api \
+#       python manage.py loaddata fixtures/datos_sqlite.json
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-all_in_django}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-all_in_django}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file: .env.docker
+    environment:
+      # La API habla con el servicio 'db' por su nombre de red.
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-all_in_django}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # readiness real (SELECT 1 vía /healthz/); la imagen slim no trae curl → urllib.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz/',timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  ui:
+    build: ./streamlit_ui
+    environment:
+      # Único acoplamiento UI↔API: la URL base de la API en la red de Compose.
+      API_BASE: http://api:8000/api
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

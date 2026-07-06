@@ -18,6 +18,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = env.SECRET_KEY
 DEBUG = env.DEBUG
 ALLOWED_HOSTS = env.ALLOWED_HOSTS
+# Necesario para el admin/DRF tras un proxy inverso o contenedor (esquemas https).
+CSRF_TRUSTED_ORIGINS = env.CSRF_TRUSTED_ORIGINS
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ─── Apps ───────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
@@ -38,6 +41,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise sirve los estáticos (admin/DRF) directamente desde la app, sin nginx.
+    # Debe ir justo después de SecurityMiddleware.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -101,6 +107,13 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"  # destino de collectstatic (servido por WhiteNoise)
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGGING = _LOGGING

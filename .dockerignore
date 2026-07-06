@@ -1,0 +1,31 @@
+# Contexto de build de la imagen API (raíz del repo). Excluye lo que no va en la imagen.
+env/
+venv/
+**/__pycache__/
+*.py[cod]
+.git/
+.github/
+.gitignore
+
+# Datos y secretos locales (nunca en la imagen).
+db.sqlite3
+db.sqlite3-journal
+.env
+.env.*
+fixtures/
+
+# Artefactos de test/estáticos regenerados en build.
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+staticfiles/
+
+# La API no necesita el código de la UI ni la infra/docs.
+streamlit_ui/
+infra/
+docker-compose*.yml
+*.md
+.vscode/
+.idea/
+.claude/

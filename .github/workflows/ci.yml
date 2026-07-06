@@ -1,0 +1,61 @@
+name: CI
+
+# Tests + cobertura en cada push/PR, y build de las imágenes Docker para validar
+# que compilan. Los tests corren en SQLite (conftest.py fuerza DATABASE_URL="") →
+# no hace falta un servicio de Postgres.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: pytest + cobertura
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-dev.txt
+
+      - name: Ejecutar tests con cobertura
+        env:
+          SECRET_KEY: ci-secret-key-not-for-prod
+          DEBUG: "True"
+        run: |
+          pytest --cov=apps --cov=core --cov=streamlit_ui \
+                 --cov-report=term-missing --cov-report=xml
+
+      - name: Resumen de cobertura
+        if: always()
+        run: |
+          echo "### Cobertura" >> "$GITHUB_STEP_SUMMARY"
+          pytest --cov=apps --cov=core --cov=streamlit_ui --cov-report=term \
+            2>/dev/null | tail -1 >> "$GITHUB_STEP_SUMMARY" || true
+
+  build:
+    name: build imágenes Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build imagen API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: all-in-django-api:ci
+
+      - name: Build imagen UI
+        uses: docker/build-push-action@v6
+        with:
+          context: ./streamlit_ui
+          push: false
+          tags: all-in-django-ui:ci
