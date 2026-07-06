@@ -39,6 +39,7 @@ crash.log
 # Cobertura de tests
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 
 # Test / IDE
