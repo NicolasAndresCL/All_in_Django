@@ -54,5 +54,8 @@ Desktop.ini
 # Guía de desarrollo con IA (uso local, no se publica en el repo)
 CLAUDE.md
 
+# Bitácora personal del proyecto (uso local)
+memory.md
+
 # Config local de Claude Code (personal, no versionar)
 .claude/settings.local.json
