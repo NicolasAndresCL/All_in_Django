@@ -1,0 +1,64 @@
+# Compose de DESPLIEGUE (CD): tira las imágenes ya publicadas en GHCR (no construye).
+# Lo usa el Jenkinsfile para desplegar en el mismo daemon Docker donde corre Jenkins.
+# Para desarrollo/build local usa docker-compose.yml (con `build:`).
+#
+#   IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
+#       -f docker-compose.deploy.yml pull
+#   IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
+#       -f docker-compose.deploy.yml up -d
+#
+# Variables de imagen (Jenkins las inyecta; defaults abajo):
+#   REGISTRY=ghcr.io  IMAGE_OWNER=nicolasandrescl  IMAGE_TAG=<semver publicado>
+# El CI de Actions NO publica `latest`: pasa el semver real (p. ej. 1.0.0 o 1.0).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-all_in_django}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-all_in_django}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-nicolasandrescl}/all-in-django-api:${IMAGE_TAG:-latest}
+    env_file: .env.docker
+    environment:
+      # La API habla con el servicio 'db' por su nombre de red. migrate lo corre el entrypoint.
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-all_in_django}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # readiness real (SELECT 1 vía /healthz/); la imagen slim no trae curl → urllib.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz/',timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  ui:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-nicolasandrescl}/all-in-django-ui:${IMAGE_TAG:-latest}
+    environment:
+      API_BASE: http://api:8000/api
+      API_TOKEN: ${API_TOKEN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

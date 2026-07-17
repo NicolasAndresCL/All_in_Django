@@ -76,8 +76,9 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 | Capa | Artefacto | Qué levanta |
 |---|---|---|
 | Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
-| Orquestación local | `docker-compose.yml` | Postgres + API + UI (healthchecks + `depends_on`) |
+| Orquestación local | `docker-compose.yml` (build local) | Postgres + API + UI (healthchecks + `depends_on`) |
 | CI | `.github/workflows/ci.yml`, `docker-publish.yml` | tests+cobertura, build y push a GHCR |
+| **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de las imágenes de GHCR por compose (Jenkins) |
 | Nube | `infra/terraform/` (AWS EC2 + RDS) | infra en la nube (skeleton) |
 | Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres/Ingress) |
 
@@ -103,6 +104,37 @@ La API se sirve con **gunicorn** y sirve sus estáticos (admin/DRF) con **WhiteN
 único acoplamiento UI↔API es el env `API_BASE` (en Compose, `http://api:8000/api`). El
 `collectstatic` corre en el build de la imagen con un `SECRET_KEY` throwaway (el gate de
 `core/conf.py` exige `SECRET_KEY` si `DEBUG=False`).
+
+### CD con Jenkins
+
+El **CI se queda en GitHub Actions** (tests + build + publish a GHCR en tags `v*`). El **CD lo
+hace Jenkins** (corriendo en Docker): un pipeline **declarativo** (`Jenkinsfile`) que **despliega
+las imágenes ya publicadas** en el mismo daemon Docker donde vive Jenkins, con
+`docker-compose.deploy.yml` (usa `image:` de GHCR, no `build:`).
+
+**Flujo**: `git tag vX.Y.Z && git push --tags` → Actions publica `all-in-django-{api,ui}` a GHCR →
+Job de Jenkins (parámetro **`IMAGE_TAG`**) → `docker compose pull` + `up -d` → espera `/healthz/`.
+Las migraciones se aplican solas (entrypoint de la API).
+
+```bash
+# Equivalente manual (lo que ejecuta el Jenkinsfile):
+IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
+    -f docker-compose.deploy.yml pull
+IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
+    -f docker-compose.deploy.yml up -d
+```
+
+**Prerequisitos en Jenkins**:
+- Contenedor de Jenkins con **docker CLI + docker compose** y **`/var/run/docker.sock` montado**
+  (despliega en el mismo daemon).
+- Credencial **Secret file `all-in-django-env`** = contenido de `.env.docker` (SECRET_KEY fuerte,
+  `POSTGRES_*`, `API_TOKEN`). El pipeline la materializa al workspace y la borra al terminar.
+- Si los paquetes GHCR son **privados**: credencial **Username/Password `ghcr-credentials`**
+  (usuario GitHub + PAT con `read:packages`) y marcar el parámetro `GHCR_PRIVATE`.
+
+> **Nota (`latest`)**: Actions publica `{{version}}`/`{{major}}.{{minor}}`/`sha` pero **no
+> `latest`** — pasa el semver publicado en `IMAGE_TAG` (p. ej. `1.0.0` o `1.0`). Valida el
+> `Jenkinsfile` en tu Jenkins con el *Declarative Linter* o *Replay*.
 
 ### Terraform (AWS) y Helm (Kubernetes)
 
