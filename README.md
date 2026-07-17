@@ -1,6 +1,6 @@
 # 🧩 All in Django
 
-Versión **Django + Django REST Framework** del proyecto `all_in_one` (que era Streamlit).
+Versión **Django + Django REST Framework** del proyecto `all_in_one` (que era 100% Streamlit).
 Backend con API REST + Django Admin, configuración tipada con **pydantic-settings**,
 metodología pythonic (clases, servicios, excepciones claras, logging, callbacks) y
 tests con **pytest-django**.
@@ -35,11 +35,11 @@ all_in_django/
 │   ├── notas/               # Nota (+ exportar md/txt)
 │   ├── tv/                  # scraper de canales (solo lectura)
 │   └── extras/              # commands: importar_all_in_one, reloj, login_menu
-├── streamlit_ui/            # UI Streamlit (cliente HTTP de la API) — ver su README
-│   ├── app.py  api_client.py  run_ui.py  run_app.bat
+├── nicegui_ui/             # UI NiceGUI (cliente HTTP de la API) — ver su README
+│   ├── main.py  layout.py  api_client.py  run_ui.py  run_app.bat
 │   ├── views/               # una vista por dominio (tareas: dashboard con 6 gráficos Plotly)
 │   ├── Dockerfile           # imagen de la UI
-│   └── tests/               # api_client, run_ui, dashboard y smoke de cada vista (responses + AppTest)
+│   └── tests/               # cliente, charts, gantt y smoke de páginas (responses + nicegui.testing)
 ├── Dockerfile  docker/entrypoint.sh  docker-compose.yml  .dockerignore  .env.docker.example
 ├── .github/workflows/       # ci.yml (tests+build) · docker-publish.yml (GHCR)
 ├── infra/terraform/         # AWS EC2 + RDS (skeleton)
@@ -71,11 +71,11 @@ python manage.py runserver
 ## Despliegue e IaC
 
 Toda la infraestructura está declarada como código. La orquestación imperativa
-(`streamlit_ui/run_ui.py`) se reemplaza por artefactos declarativos por capa:
+(`nicegui_ui/run_ui.py`) se reemplaza por artefactos declarativos por capa:
 
 | Capa | Artefacto | Qué levanta |
 |---|---|---|
-| Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root), `streamlit_ui/Dockerfile` (UI) | contenedores de API y UI |
+| Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
 | Orquestación local | `docker-compose.yml` | Postgres + API + UI (healthchecks + `depends_on`) |
 | CI | `.github/workflows/ci.yml`, `docker-publish.yml` | tests+cobertura, build y push a GHCR |
 | Nube | `infra/terraform/` (AWS EC2 + RDS) | infra en la nube (skeleton) |
@@ -96,7 +96,7 @@ docker compose --env-file .env.docker run --rm -v "${PWD}/fixtures:/app/fixtures
 > con `$` provoca warnings de interpolación inofensivos).
 
 - API/Admin: `http://localhost:8000/` · healthcheck `http://localhost:8000/healthz/`
-- UI Streamlit: `http://localhost:8501/`
+- UI NiceGUI: `http://localhost:8501/`
 - `docker compose down` conserva los datos (volumen `pgdata`).
 
 La API se sirve con **gunicorn** y sirve sus estáticos (admin/DRF) con **WhiteNoise**. El
@@ -158,7 +158,7 @@ Quedan públicos solo `/` (panel web) y `/healthz/` (readiness). Hay **rate limi
 
 Las listas **paginan** (`PageNumberPagination`, `PAGE_SIZE=50`): la respuesta trae
 `count`/`next`/`previous`/`results`. Un cliente que quiera todos los registros debe seguir
-los enlaces `next` (así lo hace `streamlit_ui/api_client.py`).
+los enlaces `next` (así lo hace `nicegui_ui/api_client.py`).
 
 | Endpoint | Métodos | Notas |
 |---|---|---|
@@ -180,32 +180,34 @@ los enlaces `next` (así lo hace `streamlit_ui/api_client.py`).
 | `/api/tv/canales/?buscar=` | GET | canales (scraping, cache 1h) |
 | `/api/<recurso>/exportar/?formato=excel\|pdf` | GET | export en clases/turnos/tareas |
 
-## UI Streamlit (opcional)
+## UI NiceGUI (opcional)
 
-Cliente visual de la API en `streamlit_ui/` (no toca el ORM: consume la API por HTTP).
+Cliente visual de la API en `nicegui_ui/` (no toca el ORM: consume la API por HTTP).
 La forma más rápida de levantarlo todo (env + API + UI) es el `.bat`:
 
 ```powershell
-streamlit_ui\run_app.bat
+nicegui_ui\run_app.bat
 ```
 
 `run_ui.py` orquesta el arranque: si la API no responde ya, aplica migraciones, levanta
-`manage.py runserver` (subproceso) y **espera a que conteste**; luego abre la UI apuntando
-a esa API. Así se evita el error *"No se pudo conectar con la API"*. Equivale a:
+`manage.py runserver` (subproceso) y **espera a que conteste**; luego abre la UI (`python -m
+nicegui_ui.main`) apuntando a esa API. Así se evita el error *"No se pudo conectar con la
+API"*. Equivale a:
 
 ```powershell
-python streamlit_ui\run_ui.py              # levanta API (si hace falta) + UI
+python nicegui_ui\run_ui.py                # levanta API (si hace falta) + UI
 ```
 
-La UI usa el puerto **8501** por defecto y, si está ocupado, salta al siguiente libre.
-Al cerrar la UI, la API que levantó se detiene sola. Incluye: **impresión PDF** (estudio,
-laboral, maestro y equipo), **Gantt** semanal (personal y de equipo), **copiar/basar una
-semana en otra** y **autocompletado** de proyecto/tarea en Registro de Tareas. Detalles en
-[`streamlit_ui/README.md`](streamlit_ui/README.md).
+La UI usa el puerto **8501** por defecto y, si está ocupado, salta al siguiente libre. Tema
+**VS Code Dark High Contrast**; tablas compactas con scroll y gráficos Plotly con barra de
+herramientas completa + **pantalla completa**. Incluye: **impresión PDF** (estudio, laboral,
+maestro y equipo), **Gantt** semanal (personal y de equipo), **copiar/basar una semana en
+otra**, **grilla semanal editable** de turnos y **autocompletado** de proyecto/tarea.
+Detalles en [`nicegui_ui/README.md`](nicegui_ui/README.md).
 
 Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
-`.streamlit/secrets.toml`); sin él, la vista de Inicio avisa "rechaza las credenciales
-(401)" con las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
+`nicegui_ui/.env`); sin él, la vista de Inicio avisa "rechaza las credenciales (401)" con
+las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
 
 ## Management commands
 
@@ -239,28 +241,28 @@ Endurecimiento aplicado:
 
 ```powershell
 pytest                                  # backend: lógica, modelos, API, servicios, scraper
-pytest streamlit_ui/tests               # UI: api_client + render de cada vista (HTTP mockeado)
+pytest nicegui_ui/tests                 # UI: cliente + smoke de páginas (HTTP mockeado)
 # Cobertura con coverage.py (vía pytest-cov):
-pytest --cov=apps --cov=core --cov=streamlit_ui --cov-report=term-missing
+pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term-missing
 ```
 
-130 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+164 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
 impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **seguridad**
 (`test_seguridad.py`: 401 sin token, obtención/uso del token, rate limit del login con 429,
 validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitarios con
 `unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la
 acción `importar` con los servicios mockeados, sin BD ni archivos) + cliente de la UI (api_client
-—incl. que sigue **todas** las páginas de la API y envía el header `Authorization: Token`—,
-arranque de API, dashboard y Gantt) + **smoke de las 6 vistas Streamlit** (cada `render()` con
-la API mockeada vía `responses` + `streamlit.testing.v1.AppTest`, incl. casos de API caída).
+—incl. que sigue **todas** las páginas de la API y envía el header `Authorization: Token`—) +
+**smoke de las 6 páginas NiceGUI** con **`nicegui.testing.User`** (mock HTTP vía `responses`,
+incl. casos 401/API caída) y las figuras Plotly (`charts.py`/`gantt.py`, funciones puras).
 Los tests de API usan la fixture **`api`** (conftest raíz): `APIClient` autenticado que además
-limpia el cache de throttling entre tests.
+limpia el cache de throttling entre tests. Los de UI son `async` (`asyncio_mode=auto`).
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
-Deps de test en `requirements-dev.txt` (`pytest`, `pytest-django`, `pytest-cov`, `coverage`,
-`responses`), que **incluye también `streamlit_ui/requirements.txt`**: los tests de la UI
-importan `gantt.py` y las vistas (usan plotly) y sin esas deps la recolección de pytest
-falla con exit 2 — fue la causa del primer fallo de CI. `unittest.mock` es de la stdlib.
+Deps de test en `requirements-dev.txt` (`pytest`, `pytest-asyncio`, `pytest-django`,
+`pytest-cov`, `coverage`, `responses`), que **incluye también `nicegui_ui/requirements.txt`**:
+los tests de la UI importan `gantt.py`/`charts.py` y las vistas (usan plotly/nicegui) y sin
+esas deps la recolección de pytest falla con exit 2. `unittest.mock` es de la stdlib.
 
 ## Autor
 

@@ -1,6 +1,6 @@
 # Helm chart — All in Django
 
-Despliega la app en Kubernetes: **API** (Django/DRF), **UI** (Streamlit) y, opcionalmente,
+Despliega la app en Kubernetes: **API** (Django/DRF), **UI** (NiceGUI) y, opcionalmente,
 **Postgres** (StatefulSet). Las migraciones corren en un `initContainer` de la API antes de
 servir; readiness/liveness apuntan a `/healthz/`.
 

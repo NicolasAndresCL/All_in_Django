@@ -13,6 +13,10 @@ import pytest
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 os.environ.setdefault("DEBUG", "True")
 
+# Fixture `user` para los tests de la UI NiceGUI (pytest exige declarar pytest_plugins
+# en el conftest top-level). El plugin ejecuta `main_file` (pytest.ini) por test.
+pytest_plugins = ["nicegui.testing.user_plugin"]
+
 
 @pytest.fixture
 def usuario(db):

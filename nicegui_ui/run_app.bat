@@ -1,19 +1,19 @@
 @echo off
 REM ============================================================================
-REM  run_app.bat - Levanta la API Django y la UI Streamlit de All in Django.
+REM  run_app.bat - Levanta la API Django y la UI NiceGUI de All in Django.
 REM
 REM  Flujo:
 REM    1. Localiza la raiz del proyecto y su entorno virtual (env\).
 REM    2. Activa el env (falla claro si no existe).
 REM    3. Ejecuta run_ui.py, que orquesta el resto:
 REM         - levanta la API Django (migrate + runserver) y espera a que responda,
-REM         - luego abre la UI Streamlit (puerto 8501 o el siguiente libre).
+REM         - luego abre la UI NiceGUI (puerto 8501 o el siguiente libre).
 REM
 REM  La API corre como subproceso de la UI: al cerrar la UI, la API se detiene sola.
 REM ============================================================================
 setlocal
 
-REM -- Rutas: este .bat vive en streamlit_ui\; la raiz es su carpeta padre -------
+REM -- Rutas: este .bat vive en nicegui_ui\; la raiz es su carpeta padre -------
 set "UI_DIR=%~dp0"
 pushd "%UI_DIR%.."
 set "ROOT=%CD%"
@@ -36,8 +36,8 @@ if not exist "%ROOT%\manage.py" (
 echo [1/2] Activando entorno virtual...
 call "%VENV%\Scripts\activate.bat"
 
-REM -- 2) Orquestar API + UI (run_ui.py hace migrate, runserver y luego Streamlit)
-echo [2/2] Levantando API Django y UI Streamlit...
+REM -- 2) Orquestar API + UI (run_ui.py hace migrate, runserver y luego NiceGUI)
+echo [2/2] Levantando API Django y UI NiceGUI...
 "%PY%" "%UI_DIR%run_ui.py"
 
 endlocal

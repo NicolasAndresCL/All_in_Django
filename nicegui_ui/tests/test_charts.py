@@ -1,6 +1,6 @@
-"""Tests de la construcción de figuras del dashboard de Tareas (sin runtime de Streamlit)."""
+"""Tests de las figuras del dashboard de Tareas (charts.py, sin runtime de UI)."""
 
-from views.tareas import construir_figuras
+from nicegui_ui.charts import construir_figuras
 
 # Resumen con la forma que devuelve /api/tareas/resumen/.
 RESUMEN = {
@@ -24,10 +24,8 @@ CLAVES = {"jerarquia", "esfuerzo", "intensidad", "semanal", "dia_semana", "acumu
 def test_construye_las_seis_figuras():
     figs = construir_figuras(RESUMEN)
     assert set(figs) == CLAVES
-    # Con datos completos, ninguna figura es None.
     assert all(figs[k] is not None for k in CLAVES)
-    # El sunburst usa la jerarquía proyecto→tarea.
-    assert figs["jerarquia"].data  # tiene trazas
+    assert figs["jerarquia"].data  # el sunburst tiene trazas
 
 
 def test_sin_dias_las_figuras_temporales_son_none():

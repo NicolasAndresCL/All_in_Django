@@ -1,5 +1,5 @@
-# Orquestación declarativa local: Postgres + API Django + UI Streamlit.
-# Reemplaza el arranque imperativo de streamlit_ui/run_ui.py.
+# Orquestación declarativa local: Postgres + API Django + UI NiceGUI.
+# Reemplaza el arranque imperativo de nicegui_ui/run_ui.py.
 #
 # Usa siempre --env-file .env.docker (evita que compose lea el .env de Django de la raíz,
 # cuyo SECRET_KEY con '$' dispara warnings de interpolación):
@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
 
   ui:
-    build: ./streamlit_ui
+    build: ./nicegui_ui
     environment:
       # Único acoplamiento UI↔API: la URL base de la API en la red de Compose.
       API_BASE: http://api:8000/api

@@ -45,7 +45,7 @@ resource "aws_security_group" "app" {
     cidr_blocks = ["0.0.0.0/0"]
   }
   ingress {
-    description = "UI Streamlit"
+    description = "UI NiceGUI"
     from_port   = 8501
     to_port     = 8501
     protocol    = "tcp"

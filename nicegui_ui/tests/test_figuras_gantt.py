@@ -1,6 +1,6 @@
 """Tests de construcción de los Gantt (sin runtime de Streamlit)."""
 
-from gantt import generar_gantt, generar_gantt_equipo, hora_a_decimal
+from nicegui_ui.gantt import generar_gantt, generar_gantt_equipo, hora_a_decimal
 
 
 def test_hora_a_decimal():

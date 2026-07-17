@@ -1,0 +1,12 @@
+# Contexto de build de la imagen UI (nicegui_ui/).
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+run_ui.py
+run_app.bat
+*.md
+# Secreto local: el token va por env (API_TOKEN), nunca horneado en la imagen.
+.env
+Dockerfile
+.dockerignore

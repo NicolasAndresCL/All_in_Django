@@ -98,7 +98,7 @@ else:
 
 # ─── DRF ────────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
-    # Toda la API exige autenticación: token (clientes como la UI Streamlit, header
+    # Toda la API exige autenticación: token (clientes como la UI NiceGUI, header
     # "Authorization: Token <clave>") o sesión (API navegable/admin en el navegador).
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",

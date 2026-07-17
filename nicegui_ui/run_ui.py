@@ -1,11 +1,11 @@
 """
-run_ui.py — Orquesta el arranque completo de la UI: API Django + Streamlit.
+run_ui.py — Orquesta el arranque completo de la UI: API Django + NiceGUI.
 
 Flujo:
   1. Si la API no responde ya, aplica migraciones y levanta `manage.py runserver`
      (como subproceso) y espera a que conteste.
   2. Elige el puerto de la UI: 8501 o, si está ocupado, el siguiente libre.
-  3. Lanza Streamlit apuntando a esa API (API_BASE).
+  3. Lanza la UI NiceGUI (`python main.py`) apuntando a esa API (API_BASE).
   4. Al cerrar la UI, detiene la API que este script haya levantado.
 
 Así la UI nunca arranca "antes" que la API y se evita el error de conexión.
@@ -113,15 +113,12 @@ def main() -> int:
         else:
             print(f"[UI] Usando el puerto {puerto}.")
 
-        app = Path(__file__).with_name("app.py")
-        cmd = [
-            sys.executable, "-m", "streamlit", "run", str(app),
-            "--server.port", str(puerto),
-        ]
-        # cwd=streamlit_ui/: Streamlit resuelve .streamlit/secrets.toml respecto del
-        # directorio de trabajo; así encuentra el API_TOKEN aunque run_ui.py se invoque
-        # desde la raíz del proyecto.
-        return subprocess.run(cmd, cwd=str(app.parent)).returncode
+        app = Path(__file__).with_name("main.py")
+        entorno = {**os.environ, "UI_PORT": str(puerto)}
+        # main.py carga nicegui_ui/.env por ruta absoluta (no depende del cwd),
+        # pero se lanza desde la carpeta de la UI por consistencia.
+        return subprocess.run([sys.executable, str(app)], cwd=str(app.parent),
+                              env=entorno).returncode
     finally:
         if api_proc is not None:
             print("[API] Deteniendo Django...")

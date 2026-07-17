@@ -1,6 +1,6 @@
 #!/bin/sh
 # Entrypoint de la API: aplica migraciones y arranca gunicorn.
-# Espeja el arranque imperativo de streamlit_ui/run_ui.py (migrate + servir),
+# Espeja el arranque imperativo de nicegui_ui/run_ui.py (migrate + servir),
 # pero de forma declarativa dentro del contenedor.
 set -e
 

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: all-in-django
-description: All in Django — API (Django/DRF) + UI (Streamlit) + Postgres
+description: All in Django — API (Django/DRF) + UI (NiceGUI) + Postgres
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

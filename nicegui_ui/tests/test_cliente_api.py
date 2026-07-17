@@ -3,7 +3,7 @@
 import pytest
 import responses
 
-from api_client import APIClient, APIError
+from nicegui_ui.api_client import APIClient, APIError
 
 BASE = "http://testserver/api"
 
@@ -19,14 +19,19 @@ def test_token_pone_header_authorization():
     assert cliente.session.headers["Authorization"] == "Token abc123"
 
 
-def test_sin_token_no_hay_header(api):
-    assert "Authorization" not in api.session.headers
+def test_sin_token_no_hay_header():
+    # token="" explícito: el conftest define API_TOKEN en el entorno para los smoke
+    # de páginas, así que aquí se anula para probar el caso "sin credenciales".
+    cliente = APIClient(base=BASE, token="")
+    assert "Authorization" not in cliente.session.headers
 
 
-def test_token_de_env(monkeypatch):
-    monkeypatch.setenv("API_TOKEN", "desde-env")
+def test_token_de_env():
+    # El autouse _entorno_api (conftest) define API_TOKEN=token-de-test en el entorno.
+    # Sin monkeypatch: su teardown se intercalaba con el del autouse y re-filtraba
+    # la variable al entorno global (rompía el test "sin token" de streamlit_ui).
     cliente = APIClient(base=BASE)
-    assert cliente.session.headers["Authorization"] == "Token desde-env"
+    assert cliente.session.headers["Authorization"] == "Token token-de-test"
 
 
 @responses.activate
@@ -138,16 +143,13 @@ def test_download_devuelve_bytes_y_mime(api):
 
 @responses.activate
 def test_upload_envia_multipart(api):
+    # Firma explícita (nombre, bytes): en NiceGUI vienen del evento de ui.upload
+    # (e.name, e.content.read()), sin objeto UploadedFile de por medio.
     responses.post(f"{BASE}/turnos-equipo/importar/", json={"importadas": 1}, status=201)
-
-    class _Archivo:
-        name = "turnos.csv"
-
-        def getvalue(self):
-            return b"Fecha,Agente\n2026-06-01,Babi\n"
-
-    assert api.upload("turnos-equipo", "importar", _Archivo()) == {"importadas": 1}
+    contenido = b"Fecha,Agente\n2026-06-01,Babi\n"
+    assert api.upload("turnos-equipo", "importar", "turnos.csv", contenido) == {"importadas": 1}
     assert "multipart/form-data" in responses.calls[0].request.headers["Content-Type"]
+    assert b"turnos.csv" in responses.calls[0].request.body
 
 
 @responses.activate

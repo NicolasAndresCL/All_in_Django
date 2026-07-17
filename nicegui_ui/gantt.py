@@ -3,7 +3,7 @@ gantt.py — Gráficos Gantt de horarios (Plotly), para la UI.
 
 Portado de `all_in_one/core/horarios_logic.py`. Funciones puras que reciben listas
 de dicts tal como las devuelve la API (entrada/salida como 'HH:MM:SS' o None) y
-devuelven `plotly.graph_objects.Figure`. Se dibujan con `st.plotly_chart`.
+devuelven `plotly.graph_objects.Figure`. Se dibujan con `ui.plotly`.
 """
 
 import plotly.graph_objects as go

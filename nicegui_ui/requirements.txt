@@ -1,0 +1,5 @@
+nicegui>=3.11
+requests>=2.31
+pandas>=2.0
+plotly>=5.22          # gráficos del dashboard de Registro de Tareas y Gantt
+python-dotenv>=1.0    # carga nicegui_ui/.env (API_TOKEN/API_BASE locales)

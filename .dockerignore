@@ -22,7 +22,7 @@ htmlcov/
 staticfiles/
 
 # La API no necesita el código de la UI ni la infra/docs.
-streamlit_ui/
+nicegui_ui/
 infra/
 docker-compose*.yml
 *.md

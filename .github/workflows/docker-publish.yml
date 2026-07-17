@@ -25,7 +25,7 @@ jobs:
           - image: all-in-django-api
             context: .
           - image: all-in-django-ui
-            context: ./streamlit_ui
+            context: ./nicegui_ui
     steps:
       - uses: actions/checkout@v4
 

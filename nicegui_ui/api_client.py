@@ -1,42 +1,32 @@
 """
-api_client.py — Cliente HTTP centralizado para la API REST de All in Django.
+api_client.py — Cliente HTTP centralizado para la API REST de All in Django (UI NiceGUI).
 
-La UI de Streamlit NO toca el ORM ni la base de datos: es un cliente desacoplado
-que habla con la API DRF por HTTP (mismo patrón que consumir la API desde fuera).
-Toda la lógica de red vive aquí; las vistas solo llaman a estos métodos.
+La UI NO toca el ORM ni la base de datos: es un cliente desacoplado que habla con la
+API DRF por HTTP. Toda la lógica de red vive aquí; las vistas solo llaman a estos métodos.
 
-La URL base se toma de `st.secrets["API_BASE"]`, de la variable de entorno
-`API_BASE` o, por defecto, `http://localhost:8000/api`.
+Configuración por variables de entorno (main.py carga `nicegui_ui/.env` con python-dotenv):
+- `API_BASE`  → URL base de la API (default http://localhost:8000/api).
+- `API_TOKEN` → token DRF; se envía como `Authorization: Token <clave>`. La API exige
+  autenticación (IsAuthenticated): sin token, todo devuelve 401. Se crea con
+  `python manage.py drf_create_token <usuario>` o desde el admin (Auth Token).
 """
 
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from typing import Any
 
 import requests
-import streamlit as st
 
 
 def _base_url() -> str:
-    """Resuelve la URL base de la API (secrets > entorno > localhost)."""
-    try:
-        if "API_BASE" in st.secrets:  # type: ignore[operator]
-            return str(st.secrets["API_BASE"]).rstrip("/")
-    except Exception:
-        pass
+    """Resuelve la URL base de la API desde el entorno."""
     return os.environ.get("API_BASE", "http://localhost:8000/api").rstrip("/")
 
 
 def _token() -> str:
-    """Token de la API (secrets > entorno). La API exige autenticación (IsAuthenticated):
-    sin token, todas las llamadas devuelven 401. Se crea con
-    `python manage.py drf_create_token <usuario>` o desde el admin (Auth Token)."""
-    try:
-        if "API_TOKEN" in st.secrets:  # type: ignore[operator]
-            return str(st.secrets["API_TOKEN"])
-    except Exception:
-        pass
+    """Token de la API desde el entorno (vacío = sin autenticar)."""
     return os.environ.get("API_TOKEN", "")
 
 
@@ -84,9 +74,7 @@ class APIClient:
         """GET /recurso/ (limpia params None). Agrega TODAS las páginas si la API pagina.
 
         La API DRF pagina (PAGE_SIZE=50): quedarse con la primera página truncaba las
-        vistas a 50 filas y ocultaba datos (p. ej. una semana recién copiada a una fecha
-        que cae fuera de las primeras 50 no aparecía). Seguimos los enlaces `next` hasta
-        agotar los resultados.
+        vistas a 50 filas y ocultaba datos. Seguimos los enlaces `next` hasta agotar.
         """
         limpios = {k: v for k, v in params.items() if v not in (None, "")}
         data = self._handle(
@@ -147,9 +135,14 @@ class APIClient:
             raise APIError(f"HTTP {resp.status_code} al descargar {resp.url}", resp.status_code)
         return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
-    def upload(self, recurso: str, accion: str, archivo, campo: str = "archivo") -> Any:
-        """POST multipart de un archivo a una acción (p. ej. turnos-equipo/importar/)."""
-        files = {campo: (archivo.name, archivo.getvalue())}
+    def upload(self, recurso: str, accion: str, nombre: str, contenido: bytes,
+               campo: str = "archivo") -> Any:
+        """POST multipart de un archivo a una acción (p. ej. turnos-equipo/importar/).
+
+        Firma explícita (nombre, bytes) — en NiceGUI vienen del evento de `ui.upload`
+        (`e.name`, `e.content.read()`), sin depender de un objeto UploadedFile.
+        """
+        files = {campo: (nombre, contenido)}
         return self._handle(
             self.session.post(
                 self._url(f"{recurso}/{accion}/"), files=files, timeout=self.timeout
@@ -180,7 +173,7 @@ class APIClient:
             return False
 
 
-@st.cache_resource
+@lru_cache(maxsize=1)
 def get_client() -> APIClient:
-    """Cliente único reutilizado entre reruns de Streamlit."""
+    """Cliente único del proceso (reemplaza al @st.cache_resource de la UI Streamlit)."""
     return APIClient()
