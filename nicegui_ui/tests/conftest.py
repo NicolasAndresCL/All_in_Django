@@ -16,6 +16,15 @@ import os
 
 import pytest
 
+from nicegui_ui import apagado
+
+
+@pytest.fixture(autouse=True)
+def _estado_apagado_aislado(tmp_path, monkeypatch):
+    """El estado del apagado programado vive en el HOME del usuario; se redirige a
+    un temporal para que los tests no lean ni pisen una programación real."""
+    monkeypatch.setattr(apagado, "ESTADO", tmp_path / "apagado.json")
+
 
 @pytest.fixture(autouse=True)
 def _entorno_api():

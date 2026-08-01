@@ -241,6 +241,24 @@ Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
 `nicegui_ui/.env`); sin él, la vista de Inicio avisa "rechaza las credenciales (401)" con
 las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
 
+### Apagado programado
+
+La vista **Apagado** (`/apagado`) programa el apagado o reinicio del PC. Es una utilidad
+**de escritorio local** —como el reloj y los logins—: no pasa por la API, envuelve
+`shutdown.exe`. El temporizador lo mantiene **Windows**, así que sobrevive a que cierres
+la UI y se cancela desde cualquier parte. Ofrece atajos (15…240 min), minutos a medida,
+una hora concreta (`HH:MM`, que salta a mañana si ya pasó) y el flag `/f`. Hibernar y
+cerrar sesión son **inmediatos**: `shutdown.exe` no admite retardo para ellos.
+
+Fuera de Windows —o dentro del contenedor, donde apagaría el contenedor y no el PC— la
+página se deshabilita con un aviso. Equivalente por consola:
+
+```powershell
+.\scripts\apagar.ps1 -Minutos 45
+.\scripts\apagar.ps1 -Hora 23:30 -Accion reiniciar
+.\scripts\apagar.ps1 -Cancelar
+```
+
 ## Management commands
 
 ```powershell

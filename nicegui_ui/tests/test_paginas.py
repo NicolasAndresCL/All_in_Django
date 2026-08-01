@@ -4,8 +4,12 @@ y se verifica que el contenido clave se renderiza — equivalente al test_views_
 de la UI Streamlit (mismos fixtures de datos), ahora con nicegui.testing.User.
 """
 
+from unittest.mock import patch
+
 import responses
 from nicegui.testing import User
+
+from nicegui_ui import apagado
 
 BASE = "http://testserver/api"
 
@@ -101,6 +105,22 @@ async def test_tv(user: User) -> None:
         _mock_api(rsps)
         await user.open("/tv")
         await user.should_see("TVN Chile")
+
+
+async def test_apagado(user: User, monkeypatch) -> None:
+    """La página se dibuja donde el apagado aplica (Windows). En CI corre en Linux,
+    así que se simula la disponibilidad; shutdown.exe queda mockeado por si acaso."""
+    monkeypatch.setattr(apagado, "disponible", lambda: True)
+    with patch("nicegui_ui.apagado.subprocess.run"):
+        await user.open("/apagado")
+        await user.should_see("No hay ningun apagado programado")
+        await user.should_see("Programar")
+
+
+async def test_apagado_fuera_de_windows_avisa(user: User, monkeypatch) -> None:
+    monkeypatch.setattr(apagado, "disponible", lambda: False)
+    await user.open("/apagado")
+    await user.should_see("solo esta disponible en Windows")
 
 
 # ─── estados de error (la página avisa, no revienta) ─────────────────────────

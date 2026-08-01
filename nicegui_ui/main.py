@@ -29,7 +29,15 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from nicegui import app, ui  # noqa: E402
 
-from nicegui_ui.views import calendario, inicio, liveops, notas, tareas, tv  # noqa: E402
+from nicegui_ui.views import (  # noqa: E402
+    apagado,
+    calendario,
+    inicio,
+    liveops,
+    notas,
+    tareas,
+    tv,
+)
 
 RUTAS = [
     ("/", inicio.render),
@@ -38,11 +46,12 @@ RUTAS = [
     ("/tareas", tareas.render),
     ("/notas", notas.render),
     ("/tv", tv.render),
+    ("/apagado", apagado.render),
 ]
 
 
 def registrar_paginas() -> None:
-    """Registra las 6 rutas. Función aparte porque el plugin de tests de NiceGUI
+    """Registra las rutas de la UI. Función aparte porque el plugin de tests de NiceGUI
     resetea el registro de páginas entre tests (fixture autouse lo re-invoca)."""
     for ruta, fn in RUTAS:
         ui.page(ruta)(fn)

@@ -19,6 +19,7 @@ PAGINAS = [
     ("/tareas", "task_alt", "Registro de Tareas"),
     ("/notas", "description", "Notas"),
     ("/tv", "tv", "TV Chile"),
+    ("/apagado", "power_settings_new", "Apagado"),
 ]
 
 # Dashboard/Gantt: la plantilla plotly acompaña al tema oscuro de la UI.

@@ -8,13 +8,15 @@ cliente externo. Sustituye a la antigua UI Streamlit.
 
 ```
 nicegui_ui/
-├── main.py            # @ui.page por vista (6 rutas) + ui.run (puerto 8501)
+├── main.py            # @ui.page por vista (7 rutas) + ui.run (puerto 8501)
 ├── layout.py          # shell(): tema VS Code Dark High Contrast + header/drawer + helpers
 │                       #   (metric_card, tabla con scroll, grafico con fullscreen)
 ├── api_client.py      # cliente HTTP (CRUD, acciones, export, upload, download, paginación)
 ├── charts.py          # construir_figuras: las 6 figuras Plotly del dashboard (función pura)
 ├── gantt.py           # Gantt Plotly (personal + equipo)
-├── views/             # una vista por dominio: inicio, calendario, liveops, tareas, notas, tv
+├── apagado.py         # apagado/reinicio programado del PC local (envuelve shutdown.exe)
+├── views/             # una vista por dominio: inicio, calendario, liveops, tareas,
+│                       #   notas, tv, apagado
 ├── tests/             # nicegui.testing User + responses (páginas), cliente, charts, gantt
 ├── Dockerfile  run_ui.py  run_app.bat  requirements.txt
 ```
