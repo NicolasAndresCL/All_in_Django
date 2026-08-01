@@ -43,6 +43,22 @@ def test_turno_sabado_trasnoche():
     assert extra == pytest.approx(2.0)
 
 
+def test_ordenar_horario_por_dia_y_hora_de_inicio():
+    """Ordena por día y, dentro del mismo día, por hora de entrada; libres al final."""
+    filas = [
+        {"dia": "Martes", "entrada": time(9, 0)},
+        {"dia": "Lunes", "entrada": time(11, 0)},   # mismo día, más tarde
+        {"dia": "Lunes", "entrada": time(8, 30)},   # mismo día, más temprano
+        {"dia": "Lunes", "entrada": None},          # libre → al final del lunes
+    ]
+    assert [(r["dia"], r["entrada"]) for r in horarios.ordenar_horario(filas)] == [
+        ("Lunes", time(8, 30)),
+        ("Lunes", time(11, 0)),
+        ("Lunes", None),
+        ("Martes", time(9, 0)),
+    ]
+
+
 # ─── export ──────────────────────────────────────────────────────────────────
 def test_generar_excel_firma():
     out = export.generar_excel(["a", "b"], [{"a": 1, "b": 2}])

@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from core.api import ExportMixin
-from core.horarios import DIAS_ORDEN
+from core.horarios import ordenar_horario
 from core.horarios_export import (
     generar_pdf_estudio,
     generar_pdf_laboral,
@@ -22,11 +22,6 @@ def _pdf(contenido: bytes, nombre: str) -> HttpResponse:
     resp = HttpResponse(contenido, content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="{nombre}"'
     return resp
-
-
-def _por_dia(filas: list[dict]) -> list[dict]:
-    """Ordena las filas de Lunes a Domingo (los días son CharField con choices)."""
-    return sorted(filas, key=lambda r: DIAS_ORDEN.index(r["dia"]) if r.get("dia") in DIAS_ORDEN else 99)
 
 
 def _copiar_semana(request, copiar_fn):
@@ -56,7 +51,7 @@ class ClaseViewSet(ExportMixin, viewsets.ModelViewSet):
     def imprimir(self, request):
         """PDF con formato del horario de estudio de `?semana_inicio=`."""
         semana = request.query_params.get("semana_inicio")
-        filas = _por_dia(list(
+        filas = ordenar_horario(list(
             Clase.objects.filter(semana_inicio=semana)
             .values("dia", "asignatura", "entrada", "salida", "horas")
         )) if semana else []
@@ -66,10 +61,10 @@ class ClaseViewSet(ExportMixin, viewsets.ModelViewSet):
     def imprimir_maestro(self, request):
         """PDF unificado (estudio + trabajo) de `?semana_inicio=`."""
         semana = request.query_params.get("semana_inicio")
-        clases = list(Clase.objects.filter(semana_inicio=semana)
-                      .values("dia", "asignatura", "entrada", "salida", "horas")) if semana else []
-        turnos = list(TurnoPersonal.objects.filter(semana_inicio=semana)
-                      .values("dia", "entrada", "salida", "neto", "es_libre")) if semana else []
+        clases = ordenar_horario(list(Clase.objects.filter(semana_inicio=semana)
+                 .values("dia", "asignatura", "entrada", "salida", "horas"))) if semana else []
+        turnos = ordenar_horario(list(TurnoPersonal.objects.filter(semana_inicio=semana)
+                 .values("dia", "entrada", "salida", "neto", "es_libre"))) if semana else []
         return _pdf(generar_pdf_maestro(clases, turnos, semana or "-"), f"Master_{semana}.pdf")
 
     @action(detail=False, methods=["post"])
@@ -93,7 +88,7 @@ class TurnoPersonalViewSet(ExportMixin, viewsets.ModelViewSet):
     def imprimir(self, request):
         """PDF con formato del horario laboral de `?semana_inicio=`."""
         semana = request.query_params.get("semana_inicio")
-        filas = _por_dia(list(
+        filas = ordenar_horario(list(
             TurnoPersonal.objects.filter(semana_inicio=semana)
             .values("dia", "entrada", "salida", "bruto", "neto", "extra", "es_libre")
         )) if semana else []

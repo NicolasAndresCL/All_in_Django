@@ -19,6 +19,23 @@ def get_semana_inicio(fecha: date) -> date:
     return fecha - timedelta(days=fecha.weekday())
 
 
+def ordenar_horario(filas: list[dict]) -> list[dict]:
+    """Ordena filas de horario por **día** (Lunes→Domingo) y, dentro de cada día, por
+    **hora de entrada**. Las filas sin entrada (día libre) quedan al final de su día.
+
+    Fuente de verdad del orden al imprimir/exportar horarios. Cada fila es un dict con
+    al menos `dia` (str) y `entrada` (datetime.time | None).
+    """
+    def _clave(r):
+        dia = DIAS_ORDEN.index(r["dia"]) if r.get("dia") in DIAS_ORDEN else len(DIAS_ORDEN)
+        entrada = r.get("entrada")
+        # `entrada is None` empuja los días libres al final del día; `entrada or time.min`
+        # da una hora comparable (time es truthy en py3, incluso medianoche).
+        return (dia, entrada is None, entrada or time.min)
+
+    return sorted(filas, key=_clave)
+
+
 def hora_a_decimal(h_str):
     """'HH:MM' → decimal. Horas < 8 se consideran del día siguiente (01:00 → 25.0)."""
     if not h_str or h_str == "LIBRE":
