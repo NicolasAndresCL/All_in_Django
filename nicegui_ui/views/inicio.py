@@ -3,7 +3,7 @@
 from nicegui import ui
 
 from nicegui_ui.api_client import APIError, get_client
-from nicegui_ui.layout import banner_error, metric_card, shell
+from nicegui_ui.layout import banda_tripulacion, banner_error, metric_card, shell
 
 RECURSOS = {
     "Clases": "clases",
@@ -27,6 +27,9 @@ MODULOS_MD = """
 def render() -> None:
     with shell("Inicio"):
         ui.label("Panel visual sobre la API REST (Django + DRF).").classes("text-sm text-gray-500")
+        # Portada: la tripulación al completo. Va antes de los cortes por error de
+        # conexión para que la página tenga identidad incluso si la API no responde.
+        banda_tripulacion()
         api = get_client()
 
         if not api.ping():

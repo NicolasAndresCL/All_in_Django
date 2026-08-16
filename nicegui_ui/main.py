@@ -29,6 +29,10 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from nicegui import app, ui  # noqa: E402
 
+# Imágenes del tema (personajes de fondo, emblema). Se sirven como estáticos: viven
+# dentro del paquete, así que la imagen Docker de la UI ya las lleva.
+app.add_static_files("/fondos", str(Path(__file__).parent / "static" / "fondos"))
+
 from nicegui_ui.views import (  # noqa: E402
     apagado,
     calendario,

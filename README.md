@@ -241,6 +241,29 @@ Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
 `nicegui_ui/.env`); sin él, la vista de Inicio avisa "rechaza las credenciales (401)" con
 las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
 
+### Identidad visual
+
+Sobre el tema base (VS Code Dark High Contrast) cada página tiene **un personaje de fondo
+y un color de acento propios** (`layout.IDENTIDAD`), así que la sección se reconoce por su
+color antes de leer el título. El reparto es semántico: Nami (la navegante) en Calendario,
+Jinbe (el timonel) en LiveOps, Zoro en Tareas, Robin (la arqueóloga) en Notas, Brook en TV
+y el sombrero colgado en Apagado. La portada abre con la tripulación al completo.
+
+Reglas que mantienen la legibilidad: el personaje es una **marca de agua** al 10 % disuelta
+con `mask-image` —nunca una foto de fondo—, y las superficies con datos (tarjetas, tablas,
+campos) llevan velo con desenfoque. Medido sobre la UI real, el peor caso de contraste con
+texto blanco es **7,3:1**, por encima del mínimo WCAG AA (4,5:1).
+
+Los assets se generan desde `FondosUI/` con un pipeline reproducible:
+
+```powershell
+python scripts/preparar_fondos.py     # requiere pillow + numpy
+```
+
+Reconstruye el canal alfa (los PNG de origen traen el damero de "fondo transparente"
+horneado), recorta, calcula el acento de cada imagen y escribe
+`nicegui_ui/static/fondos/` (+ `mini/` para la banda de la portada).
+
 ### Apagado programado
 
 La vista **Apagado** (`/apagado`) programa el apagado o reinicio del PC. Es una utilidad

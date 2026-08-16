@@ -15,6 +15,7 @@ nicegui_ui/
 ├── charts.py          # construir_figuras: las 6 figuras Plotly del dashboard (función pura)
 ├── gantt.py           # Gantt Plotly (personal + equipo)
 ├── apagado.py         # apagado/reinicio programado del PC local (envuelve shutdown.exe)
+├── static/fondos/     # personajes con alfa reconstruido (+ mini/ para la banda)
 ├── views/             # una vista por dominio: inicio, calendario, liveops, tareas,
 │                       #   notas, tv, apagado
 ├── tests/             # nicegui.testing User + responses (páginas), cliente, charts, gantt
