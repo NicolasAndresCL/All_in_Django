@@ -6,8 +6,17 @@ from nicegui import ui
 
 from nicegui_ui.api_client import APIError, get_client
 from nicegui_ui.charts import construir_figuras
-from nicegui_ui.layout import (PLOTLY_TEMPLATE, aviso, banner_error, grafico, metric_card,
-                    notificar_error, notificar_ok, shell, tabla)
+from nicegui_ui.layout import (
+    aviso,
+    banner_error,
+    grafico,
+    metric_card,
+    notificar_error,
+    notificar_ok,
+    shell,
+    tabla,
+)
+from nicegui_ui.tema import PLOTLY_TEMPLATE
 
 NUEVO_P, NUEVA_T = "➕ Nuevo proyecto…", "➕ Nueva tarea…"
 TODOS = "(todos)"
@@ -90,7 +99,7 @@ def render() -> None:
 
             ui.select([TODOS] + proyectos(), value=estado["filtro"],
                       label="Filtrar por proyecto", on_change=cambia_filtro) \
-                .props("outlined dense").classes("w-64")
+                .classes("w-64")
             registros = _filtrados(estado)
             if registros:
                 tabla(registros)
@@ -112,18 +121,18 @@ def render() -> None:
             with ui.row().classes("gap-3 items-end flex-wrap"):
                 ui.input("Fecha", value=estado["fecha"],
                          on_change=lambda e: estado.update(fecha=e.value)) \
-                    .props("type=date outlined dense")
+                    .props("type=date")
 
                 def cambia_p(e) -> None:
                     estado.update(p_sel=e.value, t_sel=None)
                     alta.refresh()
 
                 ui.select(opciones_p, value=estado["p_sel"], label="Proyecto",
-                          on_change=cambia_p).props("outlined dense").classes("w-56")
+                          on_change=cambia_p).classes("w-56")
                 if estado["p_sel"] == NUEVO_P:
                     ui.input("Nombre del proyecto", value=estado["p_new"],
                              on_change=lambda e: estado.update(p_new=e.value)) \
-                        .props("outlined dense")
+                        
 
             # Tareas ya usadas en ese proyecto → referencia para no reescribirlas.
             tareas_prev = (sorted({t["tarea"] for t in estado["todas"]
@@ -139,17 +148,17 @@ def render() -> None:
                     alta.refresh()
 
                 ui.select(opciones_t, value=estado["t_sel"], label="Tarea",
-                          on_change=cambia_t).props("outlined dense").classes("w-56")
+                          on_change=cambia_t).classes("w-56")
                 if estado["t_sel"] == NUEVA_T:
                     ui.input("Nombre de la tarea", value=estado["t_new"],
                              on_change=lambda e: estado.update(t_new=e.value)) \
-                        .props("outlined dense").classes("w-64")
+                        .classes("w-64")
                 ui.number("Horas", value=estado["h"], min=0, max=23, format="%d",
                           on_change=lambda e: estado.update(h=int(e.value or 0))) \
-                    .props("outlined dense").classes("w-24")
+                    .classes("w-24")
                 ui.number("Minutos", value=estado["m"], min=0, max=59, format="%d",
                           on_change=lambda e: estado.update(m=int(e.value or 0))) \
-                    .props("outlined dense").classes("w-24")
+                    .classes("w-24")
                 ui.button("Crear tarea", on_click=crear).props("color=primary")
 
         def crear() -> None:
@@ -186,7 +195,7 @@ def render() -> None:
                     for r in registros
                 }
                 sel = ui.select(opciones, value=next(iter(opciones))) \
-                    .props("outlined dense").classes("w-full")
+                    .classes("w-full")
 
                 def eliminar() -> None:
                     try:

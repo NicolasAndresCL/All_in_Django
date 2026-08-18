@@ -6,7 +6,16 @@ from nicegui import ui
 
 from nicegui_ui.api_client import APIError, get_client
 from nicegui_ui.gantt import generar_gantt_equipo
-from nicegui_ui.layout import aviso, banner_error, grafico, metric_card, notificar_error, notificar_ok, shell, tabla
+from nicegui_ui.layout import (
+    aviso,
+    banner_error,
+    grafico,
+    metric_card,
+    notificar_error,
+    notificar_ok,
+    shell,
+    tabla,
+)
 
 DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 TRABAJADORES = ["Manu", "Jorge", "Babi", "Nico"]
@@ -40,12 +49,12 @@ def render() -> None:
                 sem = ui.input("Semana (lunes)", value=estado["semana"],
                                on_change=lambda e: (estado.update(semana=e.value),
                                                     listado.refresh())) \
-                    .props("type=date outlined dense")
+                    .props("type=date")
                 sem.bind_enabled_from(chk, "value")
                 ui.select([TODOS] + TRABAJADORES, value=estado["trabajador"], label="Trabajador",
                           on_change=lambda e: (estado.update(trabajador=e.value),
                                                listado.refresh())) \
-                    .props("outlined dense").classes("w-44")
+                    .classes("w-44")
 
         # ------------------------------------------------------- listado
         @ui.refreshable
@@ -73,16 +82,16 @@ def render() -> None:
             with ui.column().classes("w-1/2"):
                 ui.label("Nuevo turno").classes("text-lg font-medium")
                 f_sem = ui.input("Semana (lunes)", value=_lunes(date.today())) \
-                    .props("type=date outlined dense")
+                    .props("type=date")
                 with ui.row().classes("gap-3"):
                     f_trab = ui.select(TRABAJADORES, value=TRABAJADORES[0], label="Trabajador") \
-                        .props("outlined dense").classes("w-40")
+                        .classes("w-40")
                     f_dia = ui.select(DIAS, value=DIAS[0], label="Día") \
-                        .props("outlined dense").classes("w-40")
+                        .classes("w-40")
                 f_libre = ui.checkbox("Día libre", value=False)
                 with ui.row().classes("gap-3"):
-                    f_in = ui.input("Entrada", value="09:00").props("type=time outlined dense")
-                    f_out = ui.input("Salida", value="18:00").props("type=time outlined dense")
+                    f_in = ui.input("Entrada", value="09:00").props("type=time")
+                    f_out = ui.input("Salida", value="18:00").props("type=time")
                 # disabled reactivo (con st.form no reaccionaba hasta el submit).
                 f_in.bind_enabled_from(f_libre, "value", backward=lambda v: not v)
                 f_out.bind_enabled_from(f_libre, "value", backward=lambda v: not v)

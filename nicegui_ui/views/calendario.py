@@ -11,7 +11,16 @@ from nicegui import ui
 
 from nicegui_ui.api_client import APIError, get_client
 from nicegui_ui.gantt import generar_gantt
-from nicegui_ui.layout import aviso, banner_error, grafico, metric_card, notificar_error, notificar_ok, shell, tabla
+from nicegui_ui.layout import (
+    aviso,
+    banner_error,
+    grafico,
+    metric_card,
+    notificar_error,
+    notificar_ok,
+    shell,
+    tabla,
+)
 
 DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
@@ -64,9 +73,9 @@ def _tab_clases(api, refrescos: dict) -> None:
                 aviso("Aún no hay otras semanas para copiar.")
             else:
                 origen = ui.select(semanas, value=semanas[0], label="Semana origen") \
-                    .props("outlined dense").classes("w-44")
+                    .classes("w-44")
                 destino = ui.input("Semana destino (lunes)", value=_lunes_iso(date.today())) \
-                    .props("type=date outlined dense")
+                    .props("type=date")
                 ui.label("⚠️ Reemplaza lo que haya en la semana destino.") \
                     .classes("text-xs text-orange-400")
 
@@ -86,11 +95,11 @@ def _tab_clases(api, refrescos: dict) -> None:
         ui.label("Nueva clase").classes("font-medium q-mt-md")
         with ui.row().classes("gap-3 items-end flex-wrap"):
             semana = ui.input("Semana (lunes)", value=_lunes_iso(date.today())) \
-                .props("type=date outlined dense")
-            dia = ui.select(DIAS, value=DIAS[0], label="Día").props("outlined dense").classes("w-36")
-            asignatura = ui.input("Asignatura").props("outlined dense").classes("w-52")
-            entrada = ui.input("Entrada", value="08:00").props("type=time outlined dense")
-            salida = ui.input("Salida", value="10:00").props("type=time outlined dense")
+                .props("type=date")
+            dia = ui.select(DIAS, value=DIAS[0], label="Día").classes("w-36")
+            asignatura = ui.input("Asignatura").classes("w-52")
+            entrada = ui.input("Entrada", value="08:00").props("type=time")
+            salida = ui.input("Salida", value="10:00").props("type=time")
 
             def crear() -> None:
                 if not (asignatura.value or "").strip():
@@ -124,7 +133,7 @@ def _tab_clases(api, refrescos: dict) -> None:
                     for c in clases
                 }
                 sel = ui.select(opciones, value=next(iter(opciones))) \
-                    .props("outlined dense").classes("w-full")
+                    .classes("w-full")
 
                 def eliminar() -> None:
                     try:
@@ -174,7 +183,7 @@ def _tab_turnos(api, refrescos: dict) -> None:
         resumen.refresh()
 
     ui.input("Semana a editar (lunes)", value=estado["semana"], on_change=cambia_semana) \
-        .props("type=date outlined dense")
+        .props("type=date")
 
     # -- cargar desde otra semana (al formulario, editable) ---------------------
     with ui.expansion("📋 Cargar desde otra semana (para editar antes de guardar)") \
@@ -188,7 +197,7 @@ def _tab_turnos(api, refrescos: dict) -> None:
             aviso("No hay otras semanas para cargar.")
         else:
             origen = ui.select(otras, value=otras[0], label="Semana origen") \
-                .props("outlined dense").classes("w-44")
+                .classes("w-44")
             ui.label("Trae esos horarios al formulario; edítalos y luego pulsa Guardar.") \
                 .classes("text-xs text-gray-500")
 
@@ -206,8 +215,8 @@ def _tab_turnos(api, refrescos: dict) -> None:
             with ui.column().classes("items-stretch gap-1"):
                 ui.label(d[:3]).classes("font-bold text-center")
                 chk = ui.checkbox("Libre", value=False)
-                ent = ui.input(value="18:00").props("type=time outlined dense")
-                sal = ui.input(value="23:00").props("type=time outlined dense")
+                ent = ui.input(value="18:00").props("type=time")
+                sal = ui.input(value="23:00").props("type=time")
                 ent.bind_enabled_from(chk, "value", backward=lambda v: not v)
                 sal.bind_enabled_from(chk, "value", backward=lambda v: not v)
                 grilla[d] = {"libre": chk, "in": ent, "out": sal}
@@ -278,7 +287,7 @@ def _tab_impresion(api, refrescos: dict) -> None:
             contenido.refresh()
 
         ui.select(semanas, value=estado["semana"], label="Semana", on_change=cambia) \
-            .props("outlined dense").classes("w-44")
+            .classes("w-44")
 
         sem = estado["semana"]
         cls_sem = [c for c in clases if c["semana_inicio"] == sem]

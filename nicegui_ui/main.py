@@ -33,6 +33,12 @@ from nicegui import app, ui  # noqa: E402
 # dentro del paquete, así que la imagen Docker de la UI ya las lleva.
 app.add_static_files("/fondos", str(Path(__file__).parent / "static" / "fondos"))
 
+from nicegui_ui import tema  # noqa: E402
+
+# Sistema visual: defaults globales de los elementos + CSS base. Se instala UNA vez al
+# arrancar (no por página): `default_props`/`default_classes` son estado de proceso.
+tema.instalar()
+
 from nicegui_ui.views import (  # noqa: E402
     apagado,
     calendario,
@@ -96,4 +102,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=True,
         reload=False,
         show=os.environ.get("UI_HEADLESS", "") != "1",
+        # Requerido por `app.storage.user`, donde se guarda el tema elegido (por
+        # usuario/navegador). Configurable por entorno para no hornear un valor fijo.
+        storage_secret=os.environ.get("UI_STORAGE_SECRET", "all-in-django-ui"),
     )

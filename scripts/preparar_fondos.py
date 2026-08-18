@@ -11,8 +11,11 @@ AoT, el craneo de la bandera y los blancos de Brook o Chopper. Se hace por
 **conectividad**: solo es fondo el damero que toca el borde de la imagen, propagado
 hacia adentro. Los blancos encerrados por el dibujo sobreviven.
 
-De paso extrae el color de acento de cada imagen (tono dominante ponderado por
-saturacion), que es el que la UI usa como color de cada pagina.
+De paso calcula los dos valores que la UI usa por personaje (`layout.TEMAS`):
+- el **acento** (tono dominante ponderado por saturacion), y
+- la **opacidad** de la marca de agua, compensada por el brillo medio de la figura:
+  Brook (frac negro) necesita casi el doble que el sombrero de paja para leerse igual
+  de presente. Con un valor unico, unos personajes quedan apagados y otros deslumbran.
 
 Solo hace falta para REGENERAR los assets; la UI consume los PNG ya procesados.
     python scripts/preparar_fondos.py            # requiere pillow + numpy
@@ -105,6 +108,36 @@ def _acento(rgb: np.ndarray, alfa: np.ndarray) -> str:
     return f"#{int(r * 255):02X}{int(g * 255):02X}{int(b * 255):02X}"
 
 
+# Brillo de referencia de la marca de agua y limites de opacidad.
+#
+# Las figuras deben VERSE (caras incluidas), no insinuarse: por eso el suelo es alto.
+# La legibilidad no se defiende bajando la opacidad sino con los velos de las
+# superficies con datos (tarjetas, tablas y campos llevan fondo casi opaco), asi que
+# el texto nunca se apoya directamente sobre el dibujo.
+PRESENCIA_OBJETIVO = 0.108
+OPACIDAD_MIN, OPACIDAD_MAX = 0.36, 0.80
+
+
+def _luminancia(rgb: np.ndarray) -> np.ndarray:
+    c = np.asarray(rgb, dtype=float) / 255.0
+    c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * c[..., 0] + 0.7152 * c[..., 1] + 0.0722 * c[..., 2]
+
+
+def _opacidad(rgb: np.ndarray, alfa: np.ndarray) -> float:
+    """Opacidad que iguala la PRESENCIA percibida de esta figura con la del resto.
+
+    Se parte del brillo medio de sus pixeles visibles: cuanto mas oscura es la figura,
+    mas opacidad necesita para leerse igual. El recorte superior es lo que protege el
+    contraste del texto.
+    """
+    visibles = rgb[alfa > 128]
+    if not len(visibles):  # pragma: no cover - imagen vacia
+        return OPACIDAD_MAX
+    media = float(_luminancia(visibles).mean())
+    return round(min(OPACIDAD_MAX, max(OPACIDAD_MIN, PRESENCIA_OBJETIVO / media)), 2)
+
+
 def procesar(ruta: Path) -> dict:
     rgb_img = Image.open(ruta).convert("RGB")
     rgb = np.asarray(rgb_img)
@@ -127,8 +160,8 @@ def procesar(ruta: Path) -> dict:
     mini.thumbnail((ALTO_MINIATURA * 2, ALTO_MINIATURA), Image.LANCZOS)
     _guardar_png(mini, MINIATURAS / ruta.name)
 
-    visible = float((alfa > 128).mean())
-    return {"acento": _acento(rgb, alfa), "tamano": salida.size, "visible": visible}
+    return {"acento": _acento(rgb, alfa), "tamano": salida.size,
+            "opacidad": _opacidad(rgb, alfa)}
 
 
 def _guardar_png(img: Image.Image, destino: Path) -> None:
@@ -136,14 +169,21 @@ def _guardar_png(img: Image.Image, destino: Path) -> None:
 
 
 def main() -> None:
+    """Procesa todo y emite las lineas de `layout.TEMAS` listas para pegar: los valores
+    de acento/opacidad se derivan de las imagenes, no se eligen a mano."""
     resumen = {}
     for ruta in sorted(ORIGEN.glob("*.png")):
         datos = procesar(ruta)
-        resumen[ruta.stem] = datos["acento"]
+        resumen[ruta.stem] = datos
         print(f"{ruta.name:16} acento={datos['acento']}  "
-              f"{datos['tamano'][0]}x{datos['tamano'][1]}  "
-              f"visible={datos['visible']:.0%}")
-    print("\nPaleta:", json.dumps(resumen, indent=2))
+              f"opacidad={datos['opacidad']:.2f}  "
+              f"{datos['tamano'][0]}x{datos['tamano'][1]}")
+
+    print("\n--- para layout.TEMAS ---")
+    for nombre, datos in resumen.items():
+        print(f'    "{nombre}": Tema("{nombre}.png", "{datos["acento"]}", '
+              f'"{nombre.title()}", {datos["opacidad"]:.2f}),')
+    print("\nPaleta:", json.dumps({n: d["acento"] for n, d in resumen.items()}, indent=2))
 
 
 if __name__ == "__main__":

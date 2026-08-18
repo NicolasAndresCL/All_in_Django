@@ -42,9 +42,9 @@ def render() -> None:
                 with ui.column().classes("grow"):
                     ui.label("Editar" if nota else "Crear nota").classes("text-lg font-medium")
                     titulo = ui.input("Título", value=(nota or {}).get("titulo", "")) \
-                        .props("outlined dense").classes("w-full")
+                        .classes("w-full")
                     formato = ui.select(FORMATOS, value=(nota or {}).get("formato", "md"),
-                                        label="Formato").props("outlined dense").classes("w-40")
+                                        label="Formato").classes("w-40")
                     cuerpo = ui.textarea("Contenido", value=(nota or {}).get("contenido", "")) \
                         .props("outlined input-style=\"min-height: 220px\"").classes("w-full")
 
@@ -86,7 +86,7 @@ def render() -> None:
                         if nota:
                             ui.button("🗑️ Eliminar", on_click=eliminar).props("flat color=negative")
                             fmt_dl = ui.select(["md", "txt"], value=nota["formato"]) \
-                                .props("outlined dense").classes("w-24")
+                                .classes("w-24")
 
                             def descargar() -> None:
                                 try:

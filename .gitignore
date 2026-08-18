@@ -62,3 +62,6 @@ memory.md
 
 # Capturas y trazas de Playwright MCP (verificacion visual, no versionadas)
 .playwright-mcp/
+
+# Storage persistente de NiceGUI (tema elegido)
+.nicegui/

@@ -13,7 +13,7 @@ def render() -> None:
             .classes("text-sm text-gray-500")
 
         busqueda = ui.input(placeholder="Buscar canal…") \
-            .props("outlined dense clearable debounce=400").classes("w-64")
+            .props("clearable debounce=400").classes("w-64")
 
         @ui.refreshable
         def grilla() -> None:
