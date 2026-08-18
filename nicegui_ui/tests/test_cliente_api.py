@@ -43,6 +43,59 @@ def test_ping_true_con_401_y_autenticado_false():
     assert cliente.autenticado() is False
 
 
+@responses.activate
+def test_estado_auth_distingue_el_motivo_del_fallo():
+    """El status es lo que permite a la UI no culpar al token de cualquier fallo: un
+    429 del rate limit se anunciaba como "credenciales rechazadas"."""
+    responses.get(f"{BASE}/", json={"detail": "throttled"}, status=429)
+    cliente = APIClient(base=BASE)
+    assert cliente.estado_auth() == (False, 429)
+
+
+@responses.activate
+def test_estado_auth_ok_devuelve_200():
+    responses.get(f"{BASE}/", json={})
+    assert APIClient(base=BASE).estado_auth() == (True, 200)
+
+
+@responses.activate
+def test_estado_auth_sin_respuesta_devuelve_status_none():
+    """Sin URL registrada, `responses` lanza ConnectionError: la API no respondió, que
+    no es lo mismo que rechazar las credenciales."""
+    assert APIClient(base=BASE).estado_auth() == (False, None)
+
+
+@responses.activate
+def test_un_cliente_sin_token_lo_recupera_del_entorno(monkeypatch):
+    """`get_client()` cachea el cliente todo el proceso: arrancar la UI antes de definir
+    API_TOKEN dejaba un cliente sin cabecera para siempre. Ahora basta con recargar."""
+    responses.get(f"{BASE}/", json={})
+    cliente = APIClient(base=BASE, token="")
+    assert cliente.tiene_token is False
+    monkeypatch.setenv("API_TOKEN", "token-tardio")
+    cliente.estado_auth()
+    assert cliente.session.headers["Authorization"] == "Token token-tardio"
+
+
+# ─── contar ──────────────────────────────────────────────────────────────────
+@responses.activate
+def test_contar_usa_el_count_de_la_paginacion_sin_recorrer_paginas(api):
+    """Contar no debe descargar el recurso entero: 543 tareas en 11 peticiones para
+    pintar un número era lo que agotaba el rate limit de la API."""
+    responses.get(
+        f"{BASE}/tareas/",
+        json={"count": 543, "next": f"{BASE}/tareas/?page=2", "results": [{"id": 1}]},
+    )
+    assert api.contar("tareas") == 543
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_contar_con_respuesta_sin_paginar(api):
+    responses.get(f"{BASE}/notas/", json=[{"id": 1}, {"id": 2}])
+    assert api.contar("notas") == 2
+
+
 # ─── list ────────────────────────────────────────────────────────────────────
 @responses.activate
 def test_list_desempaqueta_paginacion(api):

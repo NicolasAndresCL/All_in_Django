@@ -124,11 +124,22 @@ async def test_apagado_fuera_de_windows_avisa(user: User, monkeypatch) -> None:
 
 
 # ─── estados de error (la página avisa, no revienta) ─────────────────────────
-async def test_inicio_sin_token_explica_401(user: User) -> None:
+async def test_inicio_explica_el_401_con_token_puesto(user: User) -> None:
+    """Con token configurado (lo pone el conftest), un 401 apunta al token en sí —no a
+    que falte—: suele ser un token de otra base de datos."""
     with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
         rsps.get(f"{BASE}/", json={"detail": "no auth"}, status=401)
         await user.open("/")
-        await user.should_see("rechaza las credenciales")
+        await user.should_see("rechaza el token")
+
+
+async def test_inicio_no_culpa_al_token_de_un_rate_limit(user: User) -> None:
+    """El fallo que motivó esto: recargar unas cuantas veces devolvía 429 y la UI lo
+    anunciaba como credenciales inválidas, mandando a revisar donde no era."""
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        rsps.get(f"{BASE}/", json={"detail": "throttled"}, status=429)
+        await user.open("/")
+        await user.should_see("Límite de peticiones")
 
 
 async def test_tv_error_api(user: User) -> None:
