@@ -238,8 +238,13 @@ otra**, **grilla semanal editable** de turnos y **autocompletado** de proyecto/t
 Detalles en [`nicegui_ui/README.md`](nicegui_ui/README.md).
 
 Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
-`nicegui_ui/.env`); sin él, la vista de Inicio avisa "rechaza las credenciales (401)" con
-las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
+`nicegui_ui/.env`). Créalo con `python manage.py drf_create_token <usuario>`.
+
+Si algo falla, la vista de Inicio **dice qué falla**, no siempre lo mismo: falta de token,
+token rechazado (típico cuando es de otra base de datos: se creó en SQLite y la API ya
+corre sobre Postgres), **429 por rate limit** —que no es un problema de credenciales— o la
+API caída. Un token que aparece de pronto en el entorno se recoge al recargar la página,
+sin reiniciar la UI.
 
 ### Identidad visual y temas
 

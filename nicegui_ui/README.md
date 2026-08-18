@@ -53,8 +53,16 @@ con python-dotenv; gitignored). Se crea con:
 python manage.py drf_create_token <usuario>     # o en el admin: Auth Token
 ```
 
-Sin token, la vista de Inicio muestra el aviso "rechaza las credenciales (401)" con estas
-instrucciones (la API se considera viva aunque devuelva 401: `ping()` vs `autenticado()`).
+Sin token, la vista de Inicio explica qué hacer. El diagnóstico lo da
+`APIClient.estado_auth() -> (ok, status)`, y la vista traduce el status a una causa:
+falta de token, token rechazado (401/403 — suele ser un token de otra base de datos),
+**429 de rate limit** (300/min por usuario: *no* es un problema de credenciales) o API
+caída (`status is None`). Con un único sí/no, cualquier fallo se anunciaba como
+credenciales inválidas y mandaba a buscar donde no era.
+
+La portada cuenta registros con `APIClient.contar()`, que lee el `count` de la paginación:
+**una** petición por recurso. Con `len(api.list(...))` se descargaban las 543 tareas en 11
+peticiones para pintar el número 543, y una docena de recargas agotaban el rate limit.
 La URL de la API se configura con `API_BASE` (default `http://localhost:8000/api`).
 
 ## Detalles de UI
