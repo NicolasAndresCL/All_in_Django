@@ -241,28 +241,54 @@ Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
 `nicegui_ui/.env`); sin él, la vista de Inicio avisa "rechaza las credenciales (401)" con
 las instrucciones. Créalo con `python manage.py drf_create_token <usuario>`.
 
-### Identidad visual
+### Identidad visual y temas
 
 Sobre el tema base (VS Code Dark High Contrast) cada página tiene **un personaje de fondo
-y un color de acento propios** (`layout.IDENTIDAD`), así que la sección se reconoce por su
-color antes de leer el título. El reparto es semántico: Nami (la navegante) en Calendario,
+y un color de aura propios**. El reparto es semántico: Nami (la navegante) en Calendario,
 Jinbe (el timonel) en LiveOps, Zoro en Tareas, Robin (la arqueóloga) en Notas, Brook en TV
 y el sombrero colgado en Apagado. La portada abre con la tripulación al completo.
 
-Reglas que mantienen la legibilidad: el personaje es una **marca de agua** al 10 % disuelta
-con `mask-image` —nunca una foto de fondo—, y las superficies con datos (tarjetas, tablas,
-campos) llevan velo con desenfoque. Medido sobre la UI real, el peor caso de contraste con
-texto blanco es **7,3:1**, por encima del mínimo WCAG AA (4,5:1).
+**Selector de tema** en la esquina superior derecha: los 16 personajes como temas
+completos, más **Auto** (cada página con el suyo). La elección se guarda en
+`app.storage.user`, es decir **por navegador**, y sobrevive a reiniciar la UI.
 
-Los assets se generan desde `FondosUI/` con un pipeline reproducible:
+El personaje se dibuja como marca de agua a plena presencia —se le ve la cara— y el aura
+sale de un `drop-shadow` calculado sobre su propia silueta, no de un rectángulo de color.
+La **opacidad se calibra por personaje** midiendo su brillo medio: Brook, de frac negro,
+necesita más del doble que un emblema claro para leerse igual de presente.
+
+La legibilidad no se defiende apagando el arte, sino con **velos**: tarjetas, tablas,
+campos y gráficos llevan fondo casi opaco con desenfoque. Medido sobre la UI real, el
+contraste con texto blanco en las zonas donde hay texto es de **15:1** (WCAG AA pide 4,5:1).
+
+#### Cómo se personaliza (guía oficial de NiceGUI)
+
+Siguiendo `nicegui/llms.md` ("The Golden Rule – Python First"), la personalización va de
+arriba abajo y el CSS crudo es el último recurso. Todo vive en
+[`nicegui_ui/tema.py`](nicegui_ui/tema.py):
+
+| Nivel | Qué hace | Dónde |
+|---|---|---|
+| `default_props` / `default_classes` | Aspecto por tipo de elemento (campos `outlined dense`, tablas, tarjetas), aplicado UNA vez al arrancar | `tema.aplicar_defaults()` |
+| `ui.query('body')` | Estilado de la página y variables del tema (la guía marca `add_head_html` para esto como antipatrón) | `tema.aplicar_a_pagina()` |
+| Clases **Tailwind** | Composición y espaciado en cada vista | vistas y `layout.py` |
+| `ui.add_head_html(..., shared=True)` | SOLO lo inexpresable en Python: `body::before/::after` con `mask-image` y `drop-shadow` | `tema.instalar()` |
+
+Gracias a los defaults globales desaparecieron **21 repeticiones** de
+`.props("outlined dense")` en las vistas, y el CSS se inyecta **una sola vez** en lugar
+de en cada render de página.
+
+#### Regenerar los assets
 
 ```powershell
 python scripts/preparar_fondos.py     # requiere pillow + numpy
 ```
 
 Reconstruye el canal alfa (los PNG de origen traen el damero de "fondo transparente"
-horneado), recorta, calcula el acento de cada imagen y escribe
-`nicegui_ui/static/fondos/` (+ `mini/` para la banda de la portada).
+horneado), recorta, calcula el acento y la opacidad de cada imagen y escribe
+`nicegui_ui/static/fondos/` (+ `mini/` para la banda y el selector). Imprime las líneas
+de `tema.TEMAS` listas para pegar: esos valores se derivan de las imágenes, no se eligen
+a ojo.
 
 ### Apagado programado
 

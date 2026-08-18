@@ -9,7 +9,9 @@ cliente externo. Sustituye a la antigua UI Streamlit.
 ```
 nicegui_ui/
 ├── main.py            # @ui.page por vista (7 rutas) + ui.run (puerto 8501)
-├── layout.py          # shell(): tema VS Code Dark High Contrast + header/drawer + helpers
+├── tema.py            # sistema visual: TEMAS, defaults globales (default_props/classes),
+│                       #   ui.query('body') y el unico add_head_html(shared=True)
+├── layout.py          # shell(): header/drawer, selector de tema y helpers de contenido
 │                       #   (metric_card, tabla con scroll, grafico con fullscreen)
 ├── api_client.py      # cliente HTTP (CRUD, acciones, export, upload, download, paginación)
 ├── charts.py          # construir_figuras: las 6 figuras Plotly del dashboard (función pura)
@@ -57,8 +59,15 @@ La URL de la API se configura con `API_BASE` (default `http://localhost:8000/api
 
 ## Detalles de UI
 
-- **Tema**: VS Code *Dark High Contrast* (fondo negro, bordes cian de contraste, foco
-  naranja), vía `ui.colors` + CSS global en `layout.py`.
+- **Tema** (`tema.py`): VS Code *Dark High Contrast* + **16 temas por personaje** con
+  selector en la esquina superior derecha; en **Auto**, cada página trae el suyo. La
+  elección se guarda en `app.storage.user` (por navegador). El personaje va como marca de
+  agua a plena presencia con un aura de `drop-shadow` sobre su silueta; la opacidad se
+  calibra por figura (la calcula `scripts/preparar_fondos.py`).
+- **Personalización global antes que estilos elemento por elemento** (guía oficial
+  `nicegui/llms.md`): `default_props`/`default_classes` por tipo de elemento en
+  `tema.aplicar_defaults()`, `ui.query('body')` para la página, clases Tailwind en las
+  vistas y `add_head_html(..., shared=True)` **solo** para los pseudo-elementos del fondo.
 - **Tablas** (`layout.tabla`): compactas, cabecera fija y scroll interno (estilo
   `st.dataframe`), no vuelcan todas las filas a lo largo de la página.
 - **Gráficos** (`layout.grafico`): barra de herramientas Plotly completa + botón de
