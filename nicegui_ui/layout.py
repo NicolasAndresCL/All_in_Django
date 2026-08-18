@@ -32,18 +32,22 @@ def shell(titulo: str):
     """Layout común: tema de la página + drawer de navegación + header."""
     t.aplicar_a_pagina(titulo)
 
-    with ui.left_drawer(value=True, bordered=True).classes("bg-black p-3") as drawer:
+    # `aid-drawer`/`aid-header` (en vez de `bg-black`) es lo que tiñe el cromo con el
+    # acento del personaje: el degradado vive en el CSS global, que lee `--aid-acento`.
+    with ui.left_drawer(value=True, bordered=True).classes("aid-drawer p-3") as drawer:
         with ui.row().classes("items-center gap-2 no-wrap mb-1"):
             ui.image(t.MARCA).classes("aid-marca w-9 h-9")
             ui.label("All in Django").classes("text-lg font-bold")
         ui.label("Cliente NiceGUI de la API REST").classes("text-xs text-gray-400 mb-3")
-        for ruta, icono, nombre in PAGINAS:
-            activo = nombre == titulo
-            ui.button(nombre, icon=icono, on_click=lambda r=ruta: ui.navigate.to(r)) \
-                .props("flat align=left color=white") \
-                .classes("w-full justify-start" + (" aid-nav-activo" if activo else ""))
+        with ui.column().classes("w-full gap-1"):
+            for ruta, icono, nombre in PAGINAS:
+                activo = nombre == titulo
+                ui.button(nombre, icon=icono, on_click=lambda r=ruta: ui.navigate.to(r)) \
+                    .props("flat align=left color=white") \
+                    .classes("w-full justify-start rounded-lg transition-colors"
+                             + (" aid-nav-activo" if activo else ""))
 
-    with ui.header().classes("bg-black items-center px-3"):
+    with ui.header().classes("aid-header items-center px-3"):
         ui.button(icon="menu", on_click=drawer.toggle).props("flat dense color=white")
         ui.label(titulo).classes("text-lg font-medium")
         ui.space()
@@ -97,8 +101,16 @@ def _opcion(clave: str, tema: t.Tema, marcado: bool) -> None:
 
 
 def banda_tripulacion() -> None:
-    """Banda de la portada con la tripulación al completo, a todo color."""
-    with ui.row().classes("aid-banda w-full flex-wrap justify-center items-end gap-4"):
+    """Banda de la portada con la tripulación al completo, a todo color.
+
+    Va dentro de una `ui.card` para que herede el velo y el borde teñidos con el acento:
+    la banda queda como una cubierta con la tripulación formada, no como doce PNG
+    sueltos sobre el fondo. El rebote lo pone el default global de `ui.image`.
+    """
+    # `flex-nowrap` + scroll: la tripulación forma en UNA cubierta. Al envolver en
+    # varias filas quedaba un rezagado suelto debajo, que leía como error de layout.
+    banda = "aid-banda w-full flex-nowrap justify-center items-end gap-2 overflow-x-auto"
+    with ui.card().classes("w-full p-3"), ui.row().classes(banda):
         for archivo in t.TRIPULACION:
             # Miniaturas: la banda pinta a 100 px, no hace falta el PNG completo.
             ui.image(f"{t.FONDOS_URL}/mini/{archivo}")
@@ -109,7 +121,9 @@ def metric_card(etiqueta: str, valor, extra: str | None = None) -> None:
     """Equivalente compacto de st.metric. El fondo y el borde vienen del default de
     `ui.card`, así que aquí solo va la composición."""
     with ui.card().tight().classes("px-4 py-3 items-center min-w-[130px]"):
-        ui.label(str(valor)).classes("text-2xl font-bold")
+        # `text-primary` = el acento del personaje activo (lo fija `ui.colors`), así la
+        # cifra —lo que se mira— lleva el color de la página.
+        ui.label(str(valor)).classes("text-2xl font-bold text-primary")
         ui.label(etiqueta).classes("text-xs text-gray-400")
         if extra:
             ui.label(extra).classes("text-xs text-green-400")
