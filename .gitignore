@@ -57,6 +57,9 @@ CLAUDE.md
 # Bitácora personal del proyecto (uso local)
 memory.md
 
+# Registro de trabajo pendiente (uso local)
+pendientes.md
+
 # Config local de Claude Code (personal, no versionar)
 .claude/settings.local.json
 
