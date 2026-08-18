@@ -257,6 +257,25 @@ sale de un `drop-shadow` calculado sobre su propia silueta, no de un rectángulo
 La **opacidad se calibra por personaje** midiendo su brillo medio: Brook, de frac negro,
 necesita más del doble que un emblema claro para leerse igual de presente.
 
+El color del personaje no se queda en el fondo: **tiñe toda la interfaz**. La barra
+superior y el menú lateral arrancan del acento y se apagan a negro antes de la mitad; las
+**tarjetas** llevan ese mismo degradado, borde y realce superior (y se encienden al pasar
+el ratón); tablas, separadores, gráficos y el menú del selector siguen el mismo color. Las
+cifras de las métricas van en `text-primary`, que es el acento activo.
+
+Debajo de todo hay una **cubierta de barco**: una madera tenue de tablones, juntas y
+vetas. Es **procedural** —gradientes CSS apilados, 0 KB de assets—, escala a cualquier
+pantalla, no scrollea (`background-attachment: fixed`) y recoge algo del acento del
+personaje. Va en el estilo **inline** de `body` (`tema.CUBIERTA`) por una razón concreta:
+la utilidad `bg-black` de Quasar es `background: #000 !important` y ese shorthand borraba
+la imagen de fondo, así que el negro lo pinta ahora la propia cubierta.
+
+Y hay **movimiento**: todas las imágenes rebotan en bucle (`aid-rebote`, aplicado desde el
+default global de `ui.image`, con la fase escalonada por posición para que la tripulación
+no salte al unísono) y la marca de agua se **mece** despacio, como el barco. Al pasar el
+ratón por encima manda el hover y la animación se detiene. Con
+`prefers-reduced-motion: reduce`, todo queda quieto.
+
 La legibilidad no se defiende apagando el arte, sino con **velos**: tarjetas, tablas,
 campos y gráficos llevan fondo casi opaco con desenfoque. Medido sobre la UI real, el
 contraste con texto blanco en las zonas donde hay texto es de **15:1** (WCAG AA pide 4,5:1).
@@ -270,9 +289,9 @@ arriba abajo y el CSS crudo es el último recurso. Todo vive en
 | Nivel | Qué hace | Dónde |
 |---|---|---|
 | `default_props` / `default_classes` | Aspecto por tipo de elemento (campos `outlined dense`, tablas, tarjetas), aplicado UNA vez al arrancar | `tema.aplicar_defaults()` |
-| `ui.query('body')` | Estilado de la página y variables del tema (la guía marca `add_head_html` para esto como antipatrón) | `tema.aplicar_a_pagina()` |
+| `ui.query('body')` | Estilado de la página: variables del tema **y la cubierta de madera** (la guía marca `add_head_html` para esto como antipatrón; aquí además es lo único que funciona) | `tema.aplicar_a_pagina()` |
 | Clases **Tailwind** | Composición y espaciado en cada vista | vistas y `layout.py` |
-| `ui.add_head_html(..., shared=True)` | SOLO lo inexpresable en Python: `body::before/::after` con `mask-image` y `drop-shadow` | `tema.instalar()` |
+| `ui.add_head_html(..., shared=True)` | SOLO lo inexpresable en Python: `body::before/::after` con `mask-image` y `drop-shadow`, y los `@keyframes` del rebote y del mecido | `tema.instalar()` |
 
 Gracias a los defaults globales desaparecieron **21 repeticiones** de
 `.props("outlined dense")` en las vistas, y el CSS se inyecta **una sola vez** en lugar

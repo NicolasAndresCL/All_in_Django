@@ -64,10 +64,24 @@ La URL de la API se configura con `API_BASE` (default `http://localhost:8000/api
   elección se guarda en `app.storage.user` (por navegador). El personaje va como marca de
   agua a plena presencia con un aura de `drop-shadow` sobre su silueta; la opacidad se
   calibra por figura (la calcula `scripts/preparar_fondos.py`).
+- **El acento tiñe toda la interfaz**: header, drawer, tarjetas (degradado + borde + realce
+  y encendido al hover), tablas, separadores, gráficos y menú del selector. Las cifras de
+  las métricas van en `text-primary`.
+- **Cubierta de barco** (`tema.CUBIERTA`): madera tenue procedural (gradientes CSS, 0 KB de
+  assets) con tablones, juntas y vetas, fija al viewport y teñida con el acento. Va en el
+  estilo **inline** de `body`: la utilidad `bg-black` de Quasar es
+  `background: #000 !important` y ese shorthand borraba la imagen (el negro lo pinta la
+  propia cubierta con `background-color`).
+- **Movimiento**: todas las imágenes rebotan (`aid-rebote` desde el default global de
+  `ui.image`, con la fase escalonada por posición) y la marca de agua se mece como el
+  barco. El hover apaga la animación —el `transform` de una animación gana a cualquier
+  regla, así que pausarla no bastaría— y `prefers-reduced-motion: reduce` lo deja todo
+  quieto.
 - **Personalización global antes que estilos elemento por elemento** (guía oficial
   `nicegui/llms.md`): `default_props`/`default_classes` por tipo de elemento en
   `tema.aplicar_defaults()`, `ui.query('body')` para la página, clases Tailwind en las
-  vistas y `add_head_html(..., shared=True)` **solo** para los pseudo-elementos del fondo.
+  vistas y `add_head_html(..., shared=True)` **solo** para los pseudo-elementos del fondo y
+  los `@keyframes` de las animaciones.
 - **Tablas** (`layout.tabla`): compactas, cabecera fija y scroll interno (estilo
   `st.dataframe`), no vuelcan todas las filas a lo largo de la página.
 - **Gráficos** (`layout.grafico`): barra de herramientas Plotly completa + botón de
