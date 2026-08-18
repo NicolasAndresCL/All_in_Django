@@ -32,19 +32,18 @@ def render() -> None:
         banda_tripulacion()
         api = get_client()
 
-        if not api.ping():
+        # Una sola petición decide las tres cosas: si la API está viva, si acepta las
+        # credenciales y —cuando no— por qué. Antes eran dos (`ping` + `autenticado`)
+        # contra la misma URL, y el doble de gasto contra el rate limit.
+        ok, status = api.estado_auth()
+        if status is None:
             banner_error(
                 f"No se pudo conectar con la API en {api.base}. Levanta el backend con "
                 "`python manage.py runserver` o ajusta la variable de entorno API_BASE."
             )
             return
-
-        if not api.autenticado():
-            banner_error(
-                "La API responde pero rechaza las credenciales (401). Define API_TOKEN "
-                "(variable de entorno o nicegui_ui/.env). Crea el token con "
-                "`python manage.py drf_create_token <usuario>` o desde el admin (Auth Token)."
-            )
+        if not ok:
+            banner_error(_motivo(status, api.tiene_token))
             return
 
         with ui.row().classes("items-center bg-green-900/30 rounded p-3 w-full"):
@@ -55,9 +54,42 @@ def render() -> None:
         with ui.row().classes("gap-3 flex-wrap"):
             for etiqueta, recurso in RECURSOS.items():
                 try:
-                    metric_card(etiqueta, len(api.list(recurso)))
+                    # `contar` = 1 petición por recurso. Con `len(api.list(...))` la
+                    # portada se descargaba las 543 tareas (11 páginas) para pintar un
+                    # número, y unas pocas recargas agotaban el rate limit de la API.
+                    metric_card(etiqueta, api.contar(recurso))
                 except APIError as exc:
                     metric_card(etiqueta, "—", extra=f"error: {exc.status}")
 
         ui.separator()
         ui.markdown(MODULOS_MD)
+
+
+def _motivo(status: int | None, tiene_token: bool) -> str:
+    """Mensaje del banner según lo que respondió la API.
+
+    Un solo texto para todos los fallos mandaba a revisar el token aunque el problema
+    fuese otro (el caso real: 429 por rate limit anunciado como credenciales inválidas).
+    """
+    if status in (401, 403) and not tiene_token:
+        return (
+            "La API responde pero exige autenticación y la UI no tiene token. Define "
+            "API_TOKEN (variable de entorno o nicegui_ui/.env) y recarga. Crea el token "
+            "con `python manage.py drf_create_token <usuario>` o desde el admin "
+            "(Auth Token)."
+        )
+    if status in (401, 403):
+        return (
+            f"La API rechaza el token de la UI ({status}). Suele pasar cuando el token "
+            "es de otra base de datos (p. ej. se creó en SQLite y la API ya corre sobre "
+            "Postgres) o el usuario dueño del token se borró. Genera uno nuevo con "
+            "`python manage.py drf_create_token <usuario>` y actualiza API_TOKEN en "
+            "nicegui_ui/.env."
+        )
+    if status == 429:
+        return (
+            "Límite de peticiones alcanzado (429): la API aplica rate limiting (300/min "
+            "por usuario). No es un problema de credenciales — espera un minuto y "
+            "recarga, o sube THROTTLE_USER en el .env del backend."
+        )
+    return f"La API respondió {status} al comprobar las credenciales en {get_client().base}."

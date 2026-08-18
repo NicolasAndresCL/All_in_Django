@@ -90,6 +90,23 @@ class APIClient:
             siguiente = data.get("next")
         return items
 
+    def contar(self, recurso: str, **params) -> int:
+        """Número de registros de un recurso, con UNA sola petición.
+
+        La respuesta paginada de DRF ya trae `count`, así que contar no exige recorrer
+        las páginas: `len(self.list("tareas"))` se traía 543 registros en 11 peticiones
+        para pintar el número 543. Con seis recursos en la portada eso agotaba el rate
+        limit (300/min) en una docena de recargas.
+        """
+        data = self._handle(
+            self.session.get(self._url(f"{recurso}/"),
+                             params={k: v for k, v in params.items() if v not in (None, "")},
+                             timeout=self.timeout)
+        )
+        if isinstance(data, dict) and "count" in data:
+            return int(data["count"])
+        return len(data or [])
+
     def get(self, recurso: str, pk: int) -> dict:
         return self._handle(
             self.session.get(self._url(f"{recurso}/{pk}/"), timeout=self.timeout)
@@ -164,13 +181,42 @@ class APIClient:
         except requests.RequestException:
             return False
 
-    def autenticado(self) -> bool:
-        """True si la API acepta las credenciales actuales (200 en la raíz del router)."""
+    def estado_auth(self) -> tuple[bool, int | None]:
+        """`(acepta_credenciales, status)` consultando la raíz del router.
+
+        Devuelve el status para que la UI pueda decir la VERDAD sobre el fallo. Antes
+        solo había un sí/no y la vista de Inicio atribuía cualquier respuesta no-2xx a
+        un token malo: con el rate limiting de DRF (300/min por usuario), recargar la
+        página unas cuantas veces devolvía **429** y la UI lo anunciaba como
+        "rechaza las credenciales (401)" — se busca el fallo donde no está.
+
+        `status is None` = la API no respondió (error de red).
+        """
+        self._asegurar_token()
         try:
             resp = self.session.get(self._url("/"), timeout=5)
-            return resp.ok
         except requests.RequestException:
-            return False
+            return False, None
+        return resp.ok, resp.status_code
+
+    def autenticado(self) -> bool:
+        """True si la API acepta las credenciales actuales (200 en la raíz del router)."""
+        return self.estado_auth()[0]
+
+    @property
+    def tiene_token(self) -> bool:
+        """True si el cliente envía cabecera de autenticación."""
+        return "Authorization" in self.session.headers
+
+    def _asegurar_token(self) -> None:
+        """Recupera el token del entorno si el cliente se construyó sin él.
+
+        `get_client()` cachea el cliente durante toda la vida del proceso: arrancar la UI
+        antes de definir `API_TOKEN` dejaba un cliente sin cabecera para siempre, y la
+        única salida era reiniciar. Ahora basta con recargar la página.
+        """
+        if not self.tiene_token and (token := _token()):
+            self.session.headers["Authorization"] = f"Token {token}"
 
 
 @lru_cache(maxsize=1)
