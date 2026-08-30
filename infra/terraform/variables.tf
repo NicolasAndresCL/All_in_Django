@@ -69,3 +69,15 @@ variable "image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "db_backup_retention_days" {
+  description = "Dias de retencion de los respaldos automaticos de RDS (0 los desactiva)."
+  type        = number
+  default     = 7
+}
+
+variable "db_deletion_protection" {
+  description = "Impide destruir la instancia RDS desde la API/consola sin desactivarlo antes."
+  type        = bool
+  default     = true
+}

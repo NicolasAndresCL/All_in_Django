@@ -11,12 +11,20 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 {{- end -}}
 
+{{/* Tag de imagen: image.tag si se pasa, si no el appVersion del Chart.
+     NUNCA 'latest': docker-publish.yml publica solo semver y sha, asi que un default
+     'latest' hacia que `helm install` con los valores de fabrica muriera en
+     ImagePullBackOff sin ninguna pista de por que. */}}
+{{- define "aid.imageTag" -}}
+{{ .Values.image.tag | default .Chart.AppVersion }}
+{{- end -}}
+
 {{/* Repos de imágenes */}}
 {{- define "aid.apiImage" -}}
-{{ .Values.image.registry }}/{{ .Values.image.owner }}/all-in-django-api:{{ .Values.image.tag }}
+{{ .Values.image.registry }}/{{ .Values.image.owner }}/all-in-django-api:{{ include "aid.imageTag" . }}
 {{- end -}}
 {{- define "aid.uiImage" -}}
-{{ .Values.image.registry }}/{{ .Values.image.owner }}/all-in-django-ui:{{ .Values.image.tag }}
+{{ .Values.image.registry }}/{{ .Values.image.owner }}/all-in-django-ui:{{ include "aid.imageTag" . }}
 {{- end -}}
 
 {{/* DATABASE_URL: calculada desde el Postgres embebido, o la provista en secret.databaseUrl */}}

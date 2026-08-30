@@ -45,8 +45,10 @@ spec:
               value: {{ .Values.postgres.password | quote }}
             - name: POSTGRES_DB
               value: {{ .Values.postgres.database | quote }}
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+            # PGDATA NO se fuerza: en postgres:18 su default es
+            # /var/lib/postgresql/18/docker, dentro del volumen que se monta abajo.
+            # El valor antiguo (/var/lib/postgresql/data/pgdata) apuntaba fuera del
+            # layout versionado y dejaba los datos donde el PVC no llega.
           ports:
             - containerPort: 5432
           readinessProbe:
@@ -56,7 +58,7 @@ spec:
             periodSeconds: 5
           volumeMounts:
             - name: data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql
   volumeClaimTemplates:
     - metadata:
         name: data

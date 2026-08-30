@@ -3,7 +3,9 @@
 image:
   registry: ghcr.io
   owner: nicolasandrescl        # ghcr.io/<owner>/all-in-django-{api,ui}
-  tag: latest
+  # Vacio -> se usa el appVersion del Chart. Actions NO publica 'latest' (solo semver+sha),
+  # asi que poner 'latest' aqui garantizaba un ImagePullBackOff.
+  tag: ""
   pullPolicy: IfNotPresent
 
 api:
@@ -32,7 +34,9 @@ secret:
 # (postgres.enabled=false) e inyecta secret.databaseUrl.
 postgres:
   enabled: true
-  image: postgres:16-alpine
+  # postgres:18 movio PGDATA a /var/lib/postgresql/18/docker y su VOLUME a
+  # /var/lib/postgresql; el StatefulSet monta el PVC ahi (ver templates/postgres.yaml).
+  image: postgres:18-alpine
   user: app
   password: app
   database: all_in_django

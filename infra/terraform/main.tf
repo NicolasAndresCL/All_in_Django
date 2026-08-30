@@ -93,9 +93,11 @@ resource "aws_db_subnet_group" "this" {
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier_prefix      = "${var.project}-"
-  engine                 = "postgres"
-  engine_version         = "16"
+  identifier_prefix = "${var.project}-"
+  engine            = "postgres"
+  # Mismo mayor que el resto del proyecto (compose, Helm) y que el Postgres de desarrollo:
+  # un dump -Fc sirve en cualquier entorno sin traducciones ni sorpresas de compatibilidad.
+  engine_version         = "18"
   instance_class         = var.db_instance_class
   allocated_storage      = 20
   db_name                = var.db_name
@@ -103,8 +105,21 @@ resource "aws_db_instance" "postgres" {
   password               = random_password.db.result
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.db.id]
-  skip_final_snapshot    = true
   publicly_accessible    = false
+
+  # Un `destroy` (accidental o no) NO debe llevarse los datos sin dejar copia.
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "${var.project}-final-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+  # Respaldos automaticos diarios; sin esto RDS no guarda nada y no hay
+  # point-in-time recovery posible.
+  backup_retention_period = var.db_backup_retention_days
+  deletion_protection     = var.db_deletion_protection
+
+  # final_snapshot_identifier lleva un timestamp() (cambia en cada plan): ignorarlo evita
+  # que Terraform proponga recrear la instancia en cada ejecucion.
+  lifecycle {
+    ignore_changes = [final_snapshot_identifier]
+  }
 }
 
 locals {
