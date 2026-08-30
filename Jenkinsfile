@@ -20,7 +20,9 @@ pipeline {
 
     parameters {
         string(name: 'IMAGE_TAG', defaultValue: '',
-               description: 'Tag GHCR a desplegar. Semver publicado (p. ej. 1.0.0 o 1.0). Actions NO publica "latest": dejarlo vacio o poner "latest" aborta el job.')
+               description: 'Tag a desplegar. Semver publicado (p. ej. 1.0.0 o 1.0). Actions NO publica "latest": dejarlo vacio o poner "latest" aborta el job.')
+        string(name: 'REGISTRY', defaultValue: 'ghcr.io',
+               description: 'Registry de donde tirar las imagenes. ghcr.io en uso normal; un registry local (p. ej. localhost:5000) permite ensayar el pipeline completo sin publicar nada fuera.')
         booleanParam(name: 'RUN_LOADDATA', defaultValue: false,
                      description: 'Sembrar datos con loaddata (una sola vez; requiere fixtures/datos_sqlite.json en el workspace).')
         booleanParam(name: 'GHCR_PRIVATE', defaultValue: false,
@@ -28,7 +30,9 @@ pipeline {
     }
 
     environment {
-        REGISTRY    = 'ghcr.io'
+        // REGISTRY es un parametro (arriba), no una constante: asi el mismo pipeline
+        // sirve para desplegar de GHCR y para ensayarse contra un registry local.
+        REGISTRY    = "${params.REGISTRY}"
         IMAGE_OWNER = 'nicolasandrescl'
         API_CTR     = 'all_in_django'
         UI_CTR      = 'all_in_django-ui'
