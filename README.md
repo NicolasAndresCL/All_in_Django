@@ -197,18 +197,51 @@ IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.y
 > `-p all-in-django`: **dos stacks distintos para la misma app**, y el healthcheck buscaba un
 > contenedor `all-in-django-api-1` que no existía.
 
-**Prerequisitos en Jenkins**:
-- Contenedor de Jenkins con **docker CLI + docker compose** y **`/var/run/docker.sock` montado**
-  (despliega en el mismo daemon).
-- Credencial **Secret file `all-in-django-env`** = contenido de `.env.docker` (SECRET_KEY fuerte,
-  `POSTGRES_*`, `API_TOKEN`). El pipeline la materializa al workspace y la borra al terminar,
-  junto con los dumps.
-- Si los paquetes GHCR son **privados**: credencial **Username/Password `ghcr-credentials`**
-  (usuario GitHub + PAT con `read:packages`) y marcar el parámetro `GHCR_PRIVATE`.
+**Prerequisitos en Jenkins** (ya montados en la máquina de desarrollo):
+
+| Requisito | Por qué | Estado |
+|---|---|---|
+| Imagen de Jenkins **con cliente de Docker** | `jenkins/jenkins` no trae el binario `docker`: sin él, cada `sh 'docker …'` muere con `docker: not found`, aunque el socket esté montado | `jenkins/Dockerfile` |
+| `/var/run/docker.sock` montado | Despliega en el mismo daemon | ya estaba |
+| Credencial **Secret file `all-in-django-env`** | Contenido de `.env.docker`. El pipeline la materializa al workspace y la borra al terminar | `init.groovy.d/10-…` |
+| Job **`all-in-django-cd`** (Pipeline desde SCM) | El Jenkinsfile viaja con el código | `init.groovy.d/20-…` |
+| Credencial `ghcr-credentials` | **Solo** si los paquetes GHCR son privados; marcar entonces `GHCR_PRIVATE` | pendiente si aplica |
+
+> Credenciales y jobs se crean con scripts Groovy de arranque, no a mano. Es la única
+> vía programática para una credencial: su contenido se cifra con la clave maestra de
+> Jenkins, así que escribir `credentials.xml` desde fuera no funciona. Detalle en
+> `jenkins/README.md`.
 
 > **Nota (`latest`)**: Actions publica `{{version}}`/`{{major}}.{{minor}}`/`sha` pero **no
-> `latest`** — pasa el semver publicado en `IMAGE_TAG` (p. ej. `1.0.0` o `1.0`). Valida el
-> `Jenkinsfile` en tu Jenkins con el *Declarative Linter* o *Replay*.
+> `latest`** — pasa el semver publicado en `IMAGE_TAG`. El pipeline **aborta** si recibe
+> `latest` o un valor vacío.
+
+#### Ensayar el pipeline sin publicar nada
+
+`REGISTRY` es un parámetro del job (por defecto `ghcr.io`). Apuntándolo a un registry
+local se ejercita el pipeline **entero** —pull, deploy, healthcheck, rollback— sin
+subir una imagen a ningún sitio. Una tubería que solo se puede probar publicando no se
+ensaya nunca.
+
+```bash
+docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:1.0.0
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:1.0.0
+docker push localhost:5000/nicolasandrescl/all-in-django-api:1.0.0
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:1.0.0
+# y lanzar el job con IMAGE_TAG=1.0.0  REGISTRY=localhost:5000
+```
+
+Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
+leyendo el Jenkinsfile** (ambos ya corregidos): en un pipeline declarativo los bloques
+`post` corren en orden `always` → `failure`/`success` → `cleanup`, de modo que limpiar
+en `always` borraba el respaldo antes de archivarlo y el `.env.docker` antes de que el
+rollback pudiera usarlo — el rollback fallaba justo cuando hacía falta.
+
+**Para comprobar que el rollback funciona hay que provocar un fallo**, no confiar en
+que el código parece correcto: se publica una imagen que arranque pero no responda al
+healthcheck, se despliega, y se verifica que el servicio vuelve solo a la versión
+anterior.
 
 ### Terraform (AWS) y Helm (Kubernetes)
 
