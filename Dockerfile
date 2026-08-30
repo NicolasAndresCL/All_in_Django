@@ -36,5 +36,11 @@ USER app
 
 EXPOSE 8000
 
+# Readiness real (/healthz/ hace SELECT 1), no "el proceso sigue vivo". Vive en la IMAGEN
+# y no en el compose: asi la hereda cualquier `docker run` del artefacto de GHCR y existe
+# una sola definicion de "sano" (antes estaba duplicada en los dos docker-compose).
+# La imagen slim no trae curl -> urllib.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz/',timeout=3).status==200 else 1)"]
+
 # migrate + gunicorn (ver docker/entrypoint.sh).
 ENTRYPOINT ["/app/docker/entrypoint.sh"]

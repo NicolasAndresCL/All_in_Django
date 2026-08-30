@@ -26,4 +26,8 @@ USER app
 
 EXPOSE 8501
 
+# La UI es un cliente HTTP: "sana" = su servidor NiceGUI responde. Que la API conteste lo
+# comprueba el healthcheck de la API, no este. Sin curl en la slim -> urllib.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/',timeout=3).status==200 else 1)"]
+
 CMD ["python", "-m", "nicegui_ui.main"]
