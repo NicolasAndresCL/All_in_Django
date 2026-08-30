@@ -208,16 +208,21 @@ pipeline {
             }
             echo "Deploy FALLO. Si hubo rollback, el servicio volvio al tag anterior; el respaldo previo queda archivado en la build."
         }
-        always {
-            // Nunca dejar el .env.docker (secretos) en el workspace.
-            sh 'rm -f .env.docker || true'
-        }
         cleanup {
-            // Los dumps se borran en `cleanup`, NO en `always`: el orden de los bloques
-            // post es always -> failure/success -> cleanup, asi que un `rm -rf respaldos`
-            // en `always` se ejecuta ANTES que el archiveArtifacts de `success` y se
-            // llevaba por delante el respaldo que se pretendia guardar. Detectado
-            // ejecutando el pipeline de verdad: "respaldos/*.dump doesn't match anything".
+            // TODA la limpieza va en `cleanup`, nunca en `always`.
+            //
+            // El orden de los bloques post es: always -> failure/success -> cleanup.
+            // Limpiar en `always` se ejecuta ANTES que el rollback de `failure` y que el
+            // archiveArtifacts de `success`, y se lleva por delante justo lo que ellos
+            // necesitan. Los dos casos se vieron en ejecuciones reales:
+            //   - "respaldos/*.dump doesn't match anything" (el respaldo, ya borrado)
+            //   - "couldn't find env file: .../.env.docker" (el rollback, sin credenciales)
+            // Este segundo era el peor: el rollback fallaba exactamente cuando hacia falta,
+            // con el servicio caido.
+            //
+            // `cleanup` corre el ultimo y siempre, pase lo que pase, asi que el workspace
+            // queda igual de limpio: ni secretos ni datos personales.
+            sh 'rm -f .env.docker || true'
             sh 'rm -rf respaldos || true'
         }
     }
