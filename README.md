@@ -1,5 +1,7 @@
 # 🧩 All in Django
 
+[![CI](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml)
+
 Versión **Django + Django REST Framework** del proyecto `all_in_one` (que era 100% Streamlit).
 Backend con API REST + Django Admin, configuración tipada con **pydantic-settings**,
 metodología pythonic (clases, servicios, excepciones claras, logging, callbacks) y
@@ -75,22 +77,20 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 
 | Capa | Artefacto | Qué levanta |
 |---|---|---|
-| Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
-| Orquestación local | `docker-compose.yml` (build local) | Postgres + API + UI (healthchecks + `depends_on`) |
-| CI | `.github/workflows/ci.yml`, `docker-publish.yml` | tests+cobertura, build y push a GHCR |
-| **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de las imágenes de GHCR por compose (Jenkins) |
-| Nube | `infra/terraform/` (AWS EC2 + RDS) | infra en la nube (skeleton) |
-| Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres/Ingress) |
+| Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root, `HEALTHCHECK`), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
+| Orquestación local | `docker-compose.yml` (build local) | Postgres 18 + API + UI (healthchecks + `depends_on`) |
+| Respaldos | `scripts/respaldar_bd.ps1`, `scripts/restaurar_bd.ps1` | dumps `-Fc` verificados del volumen |
+| CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build **y arranque** |
+| Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver+sha, **no** `latest`) |
+| **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de GHCR por compose, con respaldo previo y **rollback** |
+| Nube | `infra/terraform/` (AWS EC2 + RDS Postgres 18) | infra en la nube (skeleton) |
+| Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres 18/Ingress) |
 
 ### Docker Compose (forma recomendada de levantar todo)
 
 ```bash
-cp .env.docker.example .env.docker      # define SECRET_KEY (y credenciales de Postgres)
+cp .env.docker.example .env.docker   # SECRET_KEY, POSTGRES_* y API_TOKEN son OBLIGATORIOS
 docker compose --env-file .env.docker up -d      # db (healthy) → api (migra) → ui
-
-# Semilla de datos, una sola vez (monta fixtures/, excluido de la imagen):
-docker compose --env-file .env.docker run --rm -v "${PWD}/fixtures:/app/fixtures" api \
-    python manage.py loaddata fixtures/datos_sqlite.json
 ```
 
 > Se pasa `--env-file .env.docker` para que Compose no lea el `.env` de Django (su `SECRET_KEY`
@@ -98,37 +98,111 @@ docker compose --env-file .env.docker run --rm -v "${PWD}/fixtures:/app/fixtures
 
 - API/Admin: `http://localhost:8000/` · healthcheck `http://localhost:8000/healthz/`
 - UI NiceGUI: `http://localhost:8501/`
-- `docker compose down` conserva los datos (volumen `pgdata`).
+- Postgres: `localhost:5433` (el 5432 se deja libre para un Postgres nativo, si lo hay)
 
-La API se sirve con **gunicorn** y sirve sus estáticos (admin/DRF) con **WhiteNoise**. El
-único acoplamiento UI↔API es el env `API_BASE` (en Compose, `http://api:8000/api`). El
-`collectstatic` corre en el build de la imagen con un `SECRET_KEY` throwaway (el gate de
-`core/conf.py` exige `SECRET_KEY` si `DEBUG=False`).
+**Los contenedores** se llaman `all_in_django` (API), `all_in_django-db` y `all_in_django-ui`;
+el proyecto Compose es `all_in_django`, fijado con `name:` **dentro** del archivo — no depende
+del directorio ni de `-p`, así que el compose de desarrollo y el de despliegue actúan sobre el
+mismo stack en vez de crear dos paralelos. Como contrapartida, con `container_name` no se puede
+escalar con `--scale` (irrelevante en un stack de un nodo).
+
+Si otro stack de la máquina ya ocupa esos puertos, se cambian sin tocar el YAML:
+`API_PORT` / `UI_PORT` / `DB_PORT` en `.env.docker`.
+
+**Variables obligatorias**: el compose usa `${SECRET_KEY:?…}`, `${POSTGRES_PASSWORD:?…}` y
+`${API_TOKEN:?…}`. Si falta alguna, el stack **no arranca** en vez de levantar "sano" con una
+clave débil o con la UI devolviendo 401 en cada vista.
+
+**Salud**: el `HEALTHCHECK` vive en las **imágenes**, no en el compose. Así lo hereda cualquier
+`docker run` del artefacto de GHCR y existe una sola definición de "sano" (antes estaba
+duplicada en los dos compose y podía divergir). La API comprueba `/healthz/` (un `SELECT 1`
+real contra la base), la UI que su servidor responde.
+
+#### El volumen y la trampa de Postgres 18
+
+Los datos viven en el volumen **`all_in_django_pgdata`**. `docker compose down` (sin `-v`) los
+conserva; solo `down -v` los borra.
+
+⚠️ **`postgres:18` cambió el layout de datos** respecto a la 16:
+
+| | `postgres:16-alpine` | `postgres:18-alpine` |
+|---|---|---|
+| `PGDATA` | `/var/lib/postgresql/data` | `/var/lib/postgresql/18/docker` |
+| `VOLUME` | `/var/lib/postgresql/data` | `/var/lib/postgresql` |
+
+Por eso el compose monta `pgdata:/var/lib/postgresql` y **no fija `PGDATA`**. Montar en la ruta
+antigua con la imagen 18 haría que los datos se escribieran en un volumen **anónimo** y se
+perdieran al recrear el contenedor, **sin un solo error en el log**. Misma corrección aplicada
+al StatefulSet del chart de Helm.
+
+Comprobar que el montaje es el correcto:
+
+```bash
+docker exec all_in_django-db sh -c 'echo $PGDATA; ls $PGDATA/PG_VERSION'
+docker inspect all_in_django-db --format '{{range .Mounts}}{{.Name}} -> {{.Destination}}{{end}}'
+# all_in_django_pgdata -> /var/lib/postgresql   (y PGDATA cae dentro)
+```
+
+### Respaldo y restauración
+
+La base del contenedor es la fuente de verdad, así que tiene respaldo propio:
+
+```powershell
+.\scripts\respaldar_bd.ps1               # dump fechado a fixtures\, rota los 10 ultimos
+.\scripts\respaldar_bd.ps1 -Conservar 30
+.\scripts\restaurar_bd.ps1               # restaura el mas reciente (pide confirmacion)
+.\scripts\restaurar_bd.ps1 -Archivo fixtures\all_in_django_20260830.dump -Force
+```
+
+Detalles que importan:
+
+- Formato **custom (`-Fc`)**, no SQL plano: trae los `SEQUENCE SET`, así que tras restaurar
+  **no hay que resetear secuencias** (a diferencia del camino `dumpdata`/`loaddata`).
+- El dump se genera y se **verifica** (`pg_restore --list`) *dentro* del contenedor y solo
+  después se saca con `docker cp`. Nunca por la tubería de PowerShell, que convierte la salida
+  a texto y corrompería un binario.
+- `restaurar_bd.ps1` saca un respaldo de seguridad **antes** de pisar nada, y muestra el censo
+  de filas antes y después.
+- `fixtures/` está en `.gitignore`: los dumps llevan datos personales reales.
 
 ### CD con Jenkins
 
-El **CI se queda en GitHub Actions** (tests + build + publish a GHCR en tags `v*`). El **CD lo
-hace Jenkins** (corriendo en Docker): un pipeline **declarativo** (`Jenkinsfile`) que **despliega
-las imágenes ya publicadas** en el mismo daemon Docker donde vive Jenkins, con
-`docker-compose.deploy.yml` (usa `image:` de GHCR, no `build:`).
+El **CI se queda en GitHub Actions** (lint + tests + hardening + build/arranque, y publish a
+GHCR en tags `v*`). El **CD lo hace Jenkins** (corriendo en Docker): un pipeline **declarativo**
+(`Jenkinsfile`) que **despliega las imágenes ya publicadas** en el mismo daemon Docker donde vive
+Jenkins, con `docker-compose.deploy.yml` (usa `image:` de GHCR, no `build:`).
 
 **Flujo**: `git tag vX.Y.Z && git push --tags` → Actions publica `all-in-django-{api,ui}` a GHCR →
-Job de Jenkins (parámetro **`IMAGE_TAG`**) → `docker compose pull` + `up -d` → espera `/healthz/`.
-Las migraciones se aplican solas (entrypoint de la API).
+Job de Jenkins (parámetro **`IMAGE_TAG`**) → valida el tag → **respalda la base** → `pull` +
+`up -d` → espera a que **API y UI** queden `healthy`. Las migraciones se aplican solas
+(entrypoint de la API).
+
+Lo que el pipeline hace por ti, y antes no:
+
+| Etapa | Por qué está |
+|---|---|
+| **Validar `IMAGE_TAG`** | Aborta si es vacío o `latest`: esa etiqueta **no existe** en GHCR. Descubrirlo aquí cuesta segundos; descubrirlo en el `pull` deja el stack a medias. |
+| **Respaldo previo** | `pg_dump -Fc` verificado con `pg_restore --list` **antes** de tocar nada, archivado como artefacto de la build. Un CD que reemplaza la API debe poder devolver los datos. |
+| **Healthcheck de API *y* UI** | Antes solo se miraba la API: una UI sin token pasaba por despliegue correcto. |
+| **Rollback automático** | Si algo falla, vuelve solo al último tag que quedó sano (`.jenkins-ultimo-tag-ok`). Antes solo imprimía logs y pedía relanzar a mano, justo cuando el servicio está caído. |
 
 ```bash
 # Equivalente manual (lo que ejecuta el Jenkinsfile):
-IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
-    -f docker-compose.deploy.yml pull
-IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
-    -f docker-compose.deploy.yml up -d
+IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 ```
+
+> Ya no se pasa `-p`: el nombre de proyecto (`all_in_django`) está fijado con `name:` dentro de
+> ambos compose. Antes, desarrollo usaba `all_in_django` (por el directorio) y este pipeline
+> `-p all-in-django`: **dos stacks distintos para la misma app**, y el healthcheck buscaba un
+> contenedor `all-in-django-api-1` que no existía.
 
 **Prerequisitos en Jenkins**:
 - Contenedor de Jenkins con **docker CLI + docker compose** y **`/var/run/docker.sock` montado**
   (despliega en el mismo daemon).
 - Credencial **Secret file `all-in-django-env`** = contenido de `.env.docker` (SECRET_KEY fuerte,
-  `POSTGRES_*`, `API_TOKEN`). El pipeline la materializa al workspace y la borra al terminar.
+  `POSTGRES_*`, `API_TOKEN`). El pipeline la materializa al workspace y la borra al terminar,
+  junto con los dumps.
 - Si los paquetes GHCR son **privados**: credencial **Username/Password `ghcr-credentials`**
   (usuario GitHub + PAT con `read:packages`) y marcar el parámetro `GHCR_PRIVATE`.
 
@@ -140,44 +214,80 @@ IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
 
 Skeletons listos para `plan`/`lint`; ver [`infra/terraform/README.md`](infra/terraform/README.md)
 y [`infra/helm/all-in-django/README.md`](infra/helm/all-in-django/README.md). Terraform
-provisiona **RDS Postgres + EC2** (corre compose contra el RDS); el chart de Helm despliega
-API/UI/Postgres con migraciones en un `initContainer` y probes a `/healthz/`. ⚠️ `terraform
+provisiona **RDS Postgres 18 + EC2** (corre compose contra el RDS); el chart de Helm despliega
+API/UI/Postgres 18 con migraciones en un `initContainer` y probes a `/healthz/`. ⚠️ `terraform
 apply` crea recursos de pago.
+
+Detalles que conviene conocer antes de usarlos:
+
+- **Helm**: `image.tag` viene **vacío** y se resuelve al `appVersion` del `Chart.yaml`. Antes el
+  default era `latest`, un tag que el CI **nunca publica**, así que un `helm install` con los
+  valores de fábrica moría en `ImagePullBackOff` sin pista de por qué.
+- **Helm**: el StatefulSet de Postgres monta el PVC en `/var/lib/postgresql` y **no fija
+  `PGDATA`** — mismo motivo que en Compose (ver la trampa de Postgres 18 más arriba).
+- **Terraform**: el RDS lleva `skip_final_snapshot = false` con `final_snapshot_identifier`,
+  `backup_retention_period` (7 días por defecto) y `deletion_protection`. Antes un `destroy`
+  se llevaba la instancia **sin dejar copia**.
 
 ## Base de datos
 
-Sin `DATABASE_URL` la app usa **SQLite** (`db.sqlite3`), cero configuración. Para
-**PostgreSQL**, `config/settings.py` arma la conexión desde `DATABASE_URL` con
-`dj-database-url` (driver `psycopg` v3).
+`config/settings.py` arma la conexión desde `DATABASE_URL` con `dj-database-url` (driver
+`psycopg` v3). Sin esa variable cae a **SQLite** (`db.sqlite3`), cero configuración.
 
-**Migrar de SQLite a PostgreSQL** (conservando los datos):
+**Dónde viven los datos, según cómo levantes el proyecto:**
+
+| Modo | Base | Persistencia |
+|---|---|---|
+| `docker compose up` (recomendado) | Postgres 18 del contenedor `all_in_django-db` | volumen **`all_in_django_pgdata`** |
+| `runserver` con `DATABASE_URL` | el Postgres que apunte esa URL | ese servidor |
+| `runserver` sin `DATABASE_URL` | SQLite `db.sqlite3` | el archivo del repo |
+| `pytest` | **siempre SQLite** salvo que exportes `DATABASE_URL` en el shell | base de test efímera |
+
+Para que la app local use la base del contenedor, apunta el `.env` al puerto publicado:
+
+```
+DATABASE_URL=postgres://all_in_django:<clave>@localhost:5433/all_in_django
+```
+
+### Mover datos entre bases
+
+**Entre dos Postgres del mismo mayor** (lo habitual: host ↔ contenedor) usa un dump lógico
+`-Fc`, que es lo que hacen `scripts/respaldar_bd.ps1` y `scripts/restaurar_bd.ps1`. Trae los
+`SEQUENCE SET`, así que las secuencias quedan al día solas.
 
 ```powershell
-# 1) Crear rol + base en Postgres (psql como superusuario 'postgres')
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE ROLE all_in_django LOGIN PASSWORD 'changeme';"
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE DATABASE all_in_django OWNER all_in_django;"
+# Del Postgres nativo de Windows al contenedor, por ejemplo:
+& "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -U all_in_django -h localhost -p 5432 `
+    -d all_in_django -Fc -f fixtures\origen.dump
+.\scripts\restaurar_bd.ps1 -Archivo fixtures\origen.dump
+```
 
-# 2) Volcar los datos actuales desde SQLite (ya generado en fixtures/datos_sqlite.json)
+⚠️ **Un directorio `PGDATA` NO es portable entre versiones mayores** (ni entre la 16 y la 18,
+que además cambian de ruta). Para saltar de mayor, el único camino es el dump lógico.
+
+**Entre motores distintos** (SQLite → Postgres, o al revés) el dump binario no sirve: hay que
+pasar por `dumpdata`/`loaddata` de Django, que es agnóstico del motor.
+
+```powershell
 $env:PYTHONUTF8=1
 python manage.py dumpdata --natural-foreign --natural-primary `
   -e contenttypes -e auth.permission -e admin.logentry -e sessions.session `
-  --indent 2 -o fixtures/datos_sqlite.json
-
-# 3) Apuntar a Postgres en .env y crear el esquema + cargar los datos
-#    DATABASE_URL=postgres://all_in_django:changeme@localhost:5432/all_in_django
-python manage.py migrate
-python manage.py loaddata fixtures/datos_sqlite.json
+  --indent 2 -o fixtures/datos.json
+# En la base destino: migrate, y despues
+python manage.py loaddata fixtures/datos.json
 ```
 
 El volcado usa **claves naturales** y excluye `contenttypes`/`auth.permission` (los recrea
-`migrate`), por lo que carga limpio en la base nueva. Los campos calculados
-(`horas`, `bruto/neto/extra`) viajan en el volcado, no se recalculan al cargar.
+`migrate`). Los campos calculados (`horas`, `bruto/neto/extra`) viajan en el volcado, no se
+recalculan al cargar.
 
-`fixtures/` está en `.gitignore`: contiene datos reales (horarios, tareas y notas
-personales), no fixtures de test para versionar. Tras un `loaddata` con PKs explícitas,
-Postgres no avanza las secuencias de autoincremento: resetéalas con
-`django.db.connection.ops.sequence_reset_sql` (o crea un registro de prueba y bórralo)
-antes de dar altas nuevas desde la API/UI, o chocarán con "duplicate key".
+> Tras un `loaddata` con PKs explícitas, **Postgres no avanza las secuencias** de
+> autoincremento: resetéalas con `django.db.connection.ops.sequence_reset_sql` antes de dar
+> altas nuevas desde la API/UI, o chocarán con "duplicate key". Este problema **no existe** con
+> los dumps `-Fc` de los scripts de respaldo, que sí traen los `setval`.
+
+`fixtures/` está en `.gitignore`: contiene datos reales (horarios, tareas y notas personales),
+no fixtures de test para versionar.
 
 ## API
 
@@ -367,9 +477,38 @@ pytest                                  # backend: lógica, modelos, API, servic
 pytest nicegui_ui/tests                 # UI: cliente + smoke de páginas (HTTP mockeado)
 # Cobertura con coverage.py (vía pytest-cov):
 pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term-missing
+
+# Todo lo que verifica el CI, en el mismo orden (correr ANTES de commitear):
+.\scripts\verificar.ps1
+.\scripts\verificar.ps1 -Rapido       # salta el arranque del stack (lo más lento)
 ```
 
-164 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+### Lo que verifica el CI
+
+`.github/workflows/ci.yml` va de rápido a lento, en cascada — no se gastan minutos de build en
+algo que un lint de segundos ya iba a rechazar:
+
+| Job | Qué comprueba |
+|---|---|
+| `lint` | `ruff check` (imports muertos, orden, modismos obsoletos). Config en `pyproject.toml` |
+| `test` | pytest en SQLite con **`--cov-fail-under=80`**: la cobertura es condición de fallo, no un número decorativo |
+| `test-postgres` | la misma suite contra **Postgres 18 real** (servicio de Actions), con `-rs` para que los saltados sean visibles |
+| `deploy-check` | `manage.py check --deploy --fail-level WARNING` con `DEBUG=False` + `SECURE_HTTPS=True` y una `SECRET_KEY` efímera |
+| `build` | construye ambas imágenes **y levanta el stack**, esperando a que los tres servicios queden `healthy` |
+
+El último es el que importa: un CI que solo comprueba que la imagen *compila* da falsa
+seguridad, porque los fallos reales (migraciones, conexión a la base, token de la UI) aparecen
+al **arrancar**.
+
+`.githooks/pre-commit` corre `ruff` sobre los `.py` del commit y `hadolint` sobre los
+Dockerfiles tocados, filtrando por archivos: un commit de documentación no espera a que
+arranquen tres contenedores. Se activa una sola vez con `git config core.hooksPath .githooks`.
+
+> `ruff format` **no** está en el CI: reformatearía 58 de 102 archivos, y eso es un cambio de
+> estilo global que merece su propio commit, no colarse en una refactorización de
+> infraestructura.
+
+224 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
 impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **seguridad**
 (`test_seguridad.py`: 401 sin token, obtención/uso del token, rate limit del login con 429,
 validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitarios con
