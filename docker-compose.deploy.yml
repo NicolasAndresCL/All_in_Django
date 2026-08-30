@@ -1,63 +1,70 @@
-# Compose de DESPLIEGUE (CD): tira las imágenes ya publicadas en GHCR (no construye).
+# Compose de DESPLIEGUE (CD): tira las imagenes ya publicadas en GHCR (no construye).
 # Lo usa el Jenkinsfile para desplegar en el mismo daemon Docker donde corre Jenkins.
 # Para desarrollo/build local usa docker-compose.yml (con `build:`).
 #
-#   IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
-#       -f docker-compose.deploy.yml pull
-#   IMAGE_TAG=1.0.0 docker compose -p all-in-django --env-file .env.docker \
-#       -f docker-compose.deploy.yml up -d
+#   IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+#   IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 #
 # Variables de imagen (Jenkins las inyecta; defaults abajo):
 #   REGISTRY=ghcr.io  IMAGE_OWNER=nicolasandrescl  IMAGE_TAG=<semver publicado>
 # El CI de Actions NO publica `latest`: pasa el semver real (p. ej. 1.0.0 o 1.0).
 
+# Mismo nombre de proyecto que docker-compose.yml: el despliegue REEMPLAZA el stack local
+# en vez de levantar un segundo stack paralelo con los mismos puertos. Antes dev usaba
+# 'all_in_django' (por el directorio) y el Jenkinsfile '-p all-in-django': dos proyectos
+# distintos para la misma app, y el healthcheck del CD buscaba un contenedor que no existia.
+name: all_in_django
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
+    container_name: all_in_django-db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-all_in_django}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env.docker}
       POSTGRES_DB: ${POSTGRES_DB:-all_in_django}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # postgres:18 movio PGDATA a /var/lib/postgresql/18/docker y su VOLUME a
+      # /var/lib/postgresql. Montar en la ruta de la 16 (/var/lib/postgresql/data) mandaria
+      # los datos a un volumen anonimo y se perderian al recrear, sin error en el log.
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "${DB_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-all_in_django}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-all_in_django} -d ${POSTGRES_DB:-all_in_django}"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
 
   api:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-nicolasandrescl}/all-in-django-api:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-nicolasandrescl}/all-in-django-api:${IMAGE_TAG:?define IMAGE_TAG (semver publicado, no 'latest')}
+    container_name: all_in_django
     env_file: .env.docker
     environment:
+      SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY en .env.docker}
       # La API habla con el servicio 'db' por su nombre de red. migrate lo corre el entrypoint.
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-all_in_django}
+      DATABASE_URL: postgres://${POSTGRES_USER:-all_in_django}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-all_in_django}
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      # readiness real (SELECT 1 vía /healthz/); la imagen slim no trae curl → urllib.
-      test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz/',timeout=3).status==200 else 1)"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
+    # healthcheck heredado de la imagen (HEALTHCHECK en Dockerfile): una sola definicion
+    # de "sano", compartida por este compose, el de dev y cualquier `docker run`.
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     restart: unless-stopped
 
   ui:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-nicolasandrescl}/all-in-django-ui:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-nicolasandrescl}/all-in-django-ui:${IMAGE_TAG:?define IMAGE_TAG (semver publicado, no 'latest')}
+    container_name: all_in_django-ui
     environment:
       API_BASE: http://api:8000/api
-      API_TOKEN: ${API_TOKEN:-}
+      API_TOKEN: ${API_TOKEN:?define API_TOKEN en .env.docker}
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "8501:8501"
+      - "${UI_PORT:-8501}:8501"
     restart: unless-stopped
 
 volumes:

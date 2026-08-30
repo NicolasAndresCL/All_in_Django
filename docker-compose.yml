@@ -1,28 +1,43 @@
-# Orquestación declarativa local: Postgres + API Django + UI NiceGUI.
+# Orquestacion declarativa local: Postgres + API Django + UI NiceGUI.
 # Reemplaza el arranque imperativo de nicegui_ui/run_ui.py.
 #
-# Usa siempre --env-file .env.docker (evita que compose lea el .env de Django de la raíz,
-# cuyo SECRET_KEY con '$' dispara warnings de interpolación):
+# Usa siempre --env-file .env.docker (evita que compose lea el .env de Django de la raiz,
+# cuyo SECRET_KEY con '$' dispara warnings de interpolacion):
 #
-#   docker compose --env-file .env.docker up -d     # db → api → ui (en orden por health)
+#   docker compose --env-file .env.docker up -d     # db -> api -> ui (en orden por health)
 #   docker compose --env-file .env.docker logs -f api
 #   docker compose --env-file .env.docker down      # conserva el volumen pgdata
 #
-# Semilla de datos (una sola vez, tras el primer 'up'):
-#   docker compose --env-file .env.docker run --rm -v "${PWD}/fixtures:/app/fixtures" api \
-#       python manage.py loaddata fixtures/datos_sqlite.json
+# Respaldo / restauracion de la base:  scripts\respaldar_bd.ps1 · scripts\restaurar_bd.ps1
+
+# Nombre de proyecto FIJADO en el archivo (no derivado del directorio ni de -p): dev y
+# despliegue (docker-compose.deploy.yml) comparten proyecto, asi que `up` es idempotente
+# entre ambos y no se crean dos stacks paralelos para la misma app.
+name: all_in_django
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
+    container_name: all_in_django-db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-all_in_django}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env.docker}
       POSTGRES_DB: ${POSTGRES_DB:-all_in_django}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # OJO: postgres:18 movio PGDATA a /var/lib/postgresql/18/docker y su VOLUME a
+      # /var/lib/postgresql (en la 16 ambos eran /var/lib/postgresql/data). Montar en la
+      # ruta antigua dejaria los datos en un volumen ANONIMO y se perderian al recrear el
+      # contenedor, sin un solo error en el log. El montaje va al VOLUME de la imagen y
+      # PGDATA se deja en su default.
+      - pgdata:/var/lib/postgresql
+    ports:
+      # 5433 en el host: el PostgreSQL nativo de Windows sigue ocupando el 5432 y se
+      # conserva intacto como respaldo. Publicarlo permite inspeccionar con psql/DBeaver.
+      # Los puertos del HOST son variables (API_PORT/UI_PORT/DB_PORT en .env.docker) para
+      # poder convivir con otros stacks de la maquina sin editar este archivo.
+      - "${DB_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-all_in_django}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-all_in_django} -d ${POSTGRES_DB:-all_in_django}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -30,40 +45,44 @@ services:
 
   api:
     build: .
+    # El contenedor principal se llama exactamente 'all_in_django'.
+    # Trade-off: con container_name no se puede escalar (--scale); irrelevante en un
+    # stack personal de un nodo, y a cambio los comandos de operacion son estables.
+    container_name: all_in_django
     env_file: .env.docker
     environment:
-      # La API habla con el servicio 'db' por su nombre de red.
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-all_in_django}
+      # Fail-fast ruidoso: sin SECRET_KEY el stack NO arranca, en vez de hacerlo con una
+      # clave debil (el gate de core/conf.py exige >=50 chars y >=5 distintos).
+      SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY en .env.docker}
+      # La API habla con el servicio 'db' por su nombre de red (no por container_name).
+      DATABASE_URL: postgres://${POSTGRES_USER:-all_in_django}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-all_in_django}
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      # readiness real (SELECT 1 vía /healthz/); la imagen slim no trae curl → urllib.
-      test: ["CMD", "python", "-c",
-             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz/',timeout=3).status==200 else 1)"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
+    # healthcheck: heredado de la imagen (ver HEALTHCHECK en Dockerfile). No se repite
+    # aqui para que exista una sola definicion de "sano" y no pueda divergir entre los
+    # dos compose ni perderse en un `docker run` suelto.
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     restart: unless-stopped
 
   ui:
     build: ./nicegui_ui
+    container_name: all_in_django-ui
     environment:
-      # Único acoplamiento UI↔API: la URL base de la API en la red de Compose.
+      # Unico acoplamiento UI<->API: la URL base de la API en la red de Compose.
       API_BASE: http://api:8000/api
-      # La API exige token (IsAuthenticated). Créalo tras el primer 'up':
+      # La API exige token (IsAuthenticated). Sin el, la UI levantaria "sana" pero daria
+      # 401 en cada vista, asi que se falla al arrancar en vez de servir una UI rota.
+      # Crear uno tras el primer 'up':
       #   docker compose --env-file .env.docker exec api python manage.py createsuperuser
       #   docker compose --env-file .env.docker exec api python manage.py drf_create_token <usuario>
-      # y pon el valor como API_TOKEN en .env.docker.
-      API_TOKEN: ${API_TOKEN:-}
+      API_TOKEN: ${API_TOKEN:?define API_TOKEN en .env.docker}
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "8501:8501"
+      - "${UI_PORT:-8501}:8501"
     restart: unless-stopped
 
 volumes:
