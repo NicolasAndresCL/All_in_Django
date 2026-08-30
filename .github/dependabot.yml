@@ -1,0 +1,45 @@
+# Actualizaciones automaticas de dependencias. Sin esto, las CVE de las librerias no
+# avisan solas: hay que acordarse de mirarlas, y nadie se acuerda.
+version: 2
+updates:
+  # Dependencias Python de la API y de la UI (cada requirements en su directorio).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Un PR por grupo en vez de uno por libreria: menos ruido, y las de test se
+      # revisan juntas porque suelen subir en bloque.
+      dev:
+        patterns: ["pytest*", "coverage", "responses", "ruff"]
+
+  - package-ecosystem: pip
+    directory: "/nicegui_ui"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps-ui)"
+
+  # Las actions se fijan por tag mayor (@v4); Dependabot avisa cuando sale una v5.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci(deps)"
+
+  # Imagenes base de los Dockerfiles (python:3.14-slim).
+  - package-ecosystem: docker
+    directories:
+      - "/"
+      - "/nicegui_ui"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(docker)"

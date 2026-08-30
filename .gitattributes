@@ -1,0 +1,5 @@
+# Los hooks y scripts POSIX DEBEN llevar LF: con CRLF, /bin/sh falla con
+# "bad interpreter" o SC1017 y el hook deja de ejecutarse en silencio.
+.githooks/* text eol=lf
+docker/*.sh text eol=lf
+*.sh text eol=lf

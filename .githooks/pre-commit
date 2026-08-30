@@ -1,0 +1,43 @@
+#!/bin/sh
+# Lo obligatorio se automatiza, no se anota: un recordatorio en un documento depende de que
+# alguien lo lea en el momento justo, que es el mecanismo que ya fallo.
+#
+# Activar una sola vez:   git config core.hooksPath .githooks
+#
+# Filtra por lo que toca el commit: un commit de documentacion no debe esperar a que
+# arranquen tres contenedores.
+set -e
+
+tocados=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$tocados" ] && exit 0
+
+py=$(echo "$tocados" | grep -E '\.py$' || true)
+infra=$(echo "$tocados" | grep -E '(Dockerfile|docker-compose.*\.yml|docker/entrypoint\.sh)$' || true)
+
+if [ -z "$py" ] && [ -z "$infra" ]; then
+    exit 0
+fi
+
+RUFF=env/Scripts/python.exe
+[ -x "$RUFF" ] || RUFF=python
+
+if [ -n "$py" ]; then
+    echo "[pre-commit] ruff check sobre los archivos del commit..."
+    # shellcheck disable=SC2086
+    "$RUFF" -m ruff check $py || {
+        echo "[pre-commit] ruff fallo. Corrige (o 'ruff check --fix') antes de commitear."
+        exit 1
+    }
+fi
+
+if [ -n "$infra" ]; then
+    echo "[pre-commit] hadolint sobre los Dockerfiles tocados..."
+    for f in $(echo "$infra" | grep Dockerfile || true); do
+        docker run --rm -i hadolint/hadolint hadolint --failure-threshold warning - < "$f" || exit 1
+    done
+    echo "[pre-commit] validando los compose..."
+    docker compose --env-file .env.docker config --quiet || exit 1
+fi
+
+printf '[pre-commit] OK. Recuerda: scripts/verificar.ps1 corre el CI completo.
+'
