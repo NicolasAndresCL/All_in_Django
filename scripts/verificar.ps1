@@ -68,7 +68,14 @@ $env:DEBUG = 'True'; $env:SECURE_HTTPS = 'False'
 # 4) smoke: que el stack ARRANQUE, no solo que las imagenes compilen.
 if (-not $Rapido) {
     Ejecutar 'build + arranque del stack' {
-        docker compose --env-file .env.docker up -d --build
+        # Los MISMOS dos pasos que el job `build` del CI (build y luego up --no-build), no
+        # un `up --build` que los funde en uno: esa diferencia fue justo la que dejo pasar
+        # un fallo de nombre de imagen hasta el CI ("No such image: all_in_django-api").
+        # Un script que no reproduce el job fielmente da la misma falsa seguridad que no
+        # tenerlo.
+        docker compose --env-file .env.docker build
+        if ($LASTEXITCODE -ne 0) { return }
+        docker compose --env-file .env.docker up -d --no-build
         if ($LASTEXITCODE -ne 0) { return }
         foreach ($i in 1..60) {
             $e = @('all_in_django-db', 'all_in_django', 'all_in_django-ui') |

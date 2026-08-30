@@ -144,22 +144,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build imagen API
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          load: true
-          tags: all_in_django-api:ci
-
-      - name: Build imagen UI
-        uses: docker/build-push-action@v6
-        with:
-          context: ./nicegui_ui
-          push: false
-          load: true
-          tags: all_in_django-ui:ci
-
       # Un CI que solo comprueba que la imagen COMPILA da falsa seguridad: los fallos
       # reales (migraciones, conexion a la base, token de la UI) aparecen al ARRANCAR.
       - name: Preparar entorno efimero
@@ -174,6 +158,14 @@ jobs:
             echo "POSTGRES_DB=all_in_django"
             echo "API_TOKEN=token-efimero-de-ci"
           } > .env.docker
+
+      # Construye CON COMPOSE, no con build-push-action + tags escritos a mano: asi el
+      # nombre de cada imagen lo decide compose (<proyecto>-<servicio>) y no puede
+      # desalinearse con el que buscara `up --no-build`. Etiquetarlas aparte como
+      # `all_in_django-api:ci` hacia justamente eso: el arranque fallaba con
+      # "No such image: all_in_django-api:latest".
+      - name: Build de las imagenes
+        run: docker compose --env-file .env.docker build
 
       - name: Levantar el stack
         run: docker compose --env-file .env.docker up -d --no-build
