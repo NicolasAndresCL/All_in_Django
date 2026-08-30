@@ -1,47 +1,145 @@
 name: CI
 
-# Tests + cobertura en cada push/PR, y build de las imágenes Docker para validar
-# que compilan. Los tests corren en SQLite (conftest.py fuerza DATABASE_URL="") →
-# no hace falta un servicio de Postgres.
+# Jobs en cascada rapido -> lento: no se gastan minutos de build en algo que un lint de
+# segundos ya iba a rechazar. La regla rectora es que el CI verifique que el proyecto
+# CONSTRUYE Y ARRANCA, no solo que compila: por eso el job `build` levanta el stack.
+#
+#   lint -> test ------> build (build + smoke de arranque)
+#        -> test-postgres
+#        -> deploy-check
 
 on:
   push:
     branches: [main]
   pull_request:
 
+# Permisos minimos: ningun job de este workflow escribe en el repo.
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+
 jobs:
-  test:
-    name: pytest + cobertura
+  lint:
+    name: ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+      - name: Instalar ruff
+        run: pip install ruff
+      # Solo `check` (defectos: imports muertos, orden, modismos obsoletos).
+      # `ruff format --check` NO entra: reformatearia 58 de 102 archivos, lo que es un
+      # cambio de estilo global y merece su propio commit, no colarse en el CI.
+      - name: ruff check
+        run: ruff check --output-format=github .
 
+  test:
+    name: pytest + cobertura (SQLite)
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
       - name: Instalar dependencias
         run: pip install -r requirements-dev.txt
-
-      - name: Ejecutar tests con cobertura
+      # --cov-fail-under: la cobertura es CONDICION DE FALLO, no una metrica decorativa.
+      # El proyecto esta en ~83%; 80 deja margen para no romper por ruido normal.
+      - name: Tests con cobertura
         env:
           SECRET_KEY: ci-secret-key-not-for-prod
           DEBUG: "True"
         run: |
-          pytest --cov=apps --cov=core --cov=nicegui_ui \
-                 --cov-report=term-missing --cov-report=xml
-
+          pytest -rs --cov=apps --cov=core --cov=nicegui_ui \
+                 --cov-report=term-missing --cov-report=xml --cov-fail-under=80
       - name: Resumen de cobertura
         if: always()
         run: |
-          echo "### Cobertura" >> "$GITHUB_STEP_SUMMARY"
-          pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term \
-            2>/dev/null | tail -1 >> "$GITHUB_STEP_SUMMARY" || true
+          {
+            echo "### Cobertura"
+            echo '```'
+            python -c "import xml.etree.ElementTree as E; r=E.parse('coverage.xml').getroot(); print(f\"Total: {float(r.get('line-rate'))*100:.1f}%\")" 2>/dev/null || echo "(sin informe)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test-postgres:
+    name: pytest contra Postgres real
+    needs: lint
+    runs-on: ubuntu-latest
+    # La suite corre en SQLite por defecto (conftest.py lo fuerza si no hay DATABASE_URL).
+    # Este job la corre contra el motor de produccion: SQLite ignora en silencio cosas que
+    # Postgres no (tipos, constraints, transacciones), asi que un verde solo en SQLite no
+    # prueba que la app funcione donde de verdad se despliega.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: all_in_django
+          POSTGRES_PASSWORD: all_in_django
+          POSTGRES_DB: all_in_django_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -r requirements-dev.txt
+      # -rs muestra los saltados: si un test apareciera aqui como skip, seria senal de que
+      # NO esta corriendo contra Postgres y el job estaria pasando por verde sin probar nada.
+      - name: Tests contra Postgres
+        env:
+          SECRET_KEY: ci-secret-key-not-for-prod
+          DEBUG: "True"
+          DATABASE_URL: postgres://all_in_django:all_in_django@localhost:5432/all_in_django_test
+        run: pytest -rs
+
+  deploy-check:
+    name: hardening de produccion
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      # Corre con la configuracion de PRODUCCION (DEBUG=False + SECURE_HTTPS=True) para
+      # cazar SSL redirect, HSTS y cookies inseguras antes de que lleguen a un despliegue.
+      # La SECRET_KEY se genera al vuelo: el gate de core/conf.py exige >=50 chars y >=5
+      # distintos, asi que una clave debil haria fallar el job por la CLAVE y no por el
+      # hardening, que es lo que se quiere medir.
+      - name: check --deploy
+        env:
+          DEBUG: "False"
+          SECURE_HTTPS: "True"
+          ALLOWED_HOSTS: all-in-django.local
+        run: |
+          # Declarar y asignar por separado (SC2155): si el generador de la clave fallara,
+          # un `export X="$(...)"` devolveria 0 y el job seguiria con SECRET_KEY vacia.
+          SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
+          export SECRET_KEY
+          python manage.py check --deploy --fail-level WARNING
 
   build:
-    name: build imágenes Docker
+    name: build + arranque del stack
+    needs: [test, test-postgres, deploy-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,11 +149,61 @@ jobs:
         with:
           context: .
           push: false
-          tags: all-in-django-api:ci
+          load: true
+          tags: all_in_django-api:ci
 
       - name: Build imagen UI
         uses: docker/build-push-action@v6
         with:
           context: ./nicegui_ui
           push: false
-          tags: all-in-django-ui:ci
+          load: true
+          tags: all_in_django-ui:ci
+
+      # Un CI que solo comprueba que la imagen COMPILA da falsa seguridad: los fallos
+      # reales (migraciones, conexion a la base, token de la UI) aparecen al ARRANCAR.
+      - name: Preparar entorno efimero
+        run: |
+          {
+            echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(64))')"
+            echo "DEBUG=False"
+            echo "ALLOWED_HOSTS=localhost,127.0.0.1,api"
+            echo "CSRF_TRUSTED_ORIGINS="
+            echo "POSTGRES_USER=all_in_django"
+            echo "POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+            echo "POSTGRES_DB=all_in_django"
+            echo "API_TOKEN=token-efimero-de-ci"
+          } > .env.docker
+
+      - name: Levantar el stack
+        run: docker compose --env-file .env.docker up -d --no-build
+
+      - name: Esperar a que los tres servicios queden healthy
+        run: |
+          for i in $(seq 1 60); do
+            estados=""
+            for c in all_in_django-db all_in_django all_in_django-ui; do
+              estados="$estados $c=$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo ausente)"
+            done
+            echo "[$i]$estados"
+            case "$estados" in
+              *unhealthy*) echo "Un servicio quedo unhealthy."; exit 1 ;;
+            esac
+            if [ "$(echo "$estados" | grep -o healthy | wc -l)" -eq 3 ]; then
+              echo "Los tres servicios arrancaron y estan sanos."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timeout esperando healthy."
+          exit 1
+
+      - name: Diagnostico si algo fallo
+        if: failure()
+        run: |
+          docker compose --env-file .env.docker ps -a
+          docker compose --env-file .env.docker logs --tail=60
+
+      - name: Limpiar
+        if: always()
+        run: docker compose --env-file .env.docker down -v || true
