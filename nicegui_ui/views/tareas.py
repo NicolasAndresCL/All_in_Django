@@ -131,8 +131,7 @@ def render() -> None:
                           on_change=cambia_p).classes("w-56")
                 if estado["p_sel"] == NUEVO_P:
                     ui.input("Nombre del proyecto", value=estado["p_new"],
-                             on_change=lambda e: estado.update(p_new=e.value)) \
-                        
+                             on_change=lambda e: estado.update(p_new=e.value))
 
             # Tareas ya usadas en ese proyecto → referencia para no reescribirlas.
             tareas_prev = (sorted({t["tarea"] for t in estado["todas"]

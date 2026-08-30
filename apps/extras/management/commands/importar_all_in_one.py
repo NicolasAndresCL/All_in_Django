@@ -8,7 +8,7 @@ Django. Idempotente: omite un modelo si ya tiene registros.
 """
 
 import sqlite3
-from datetime import datetime, time
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd

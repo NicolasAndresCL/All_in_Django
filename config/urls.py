@@ -5,10 +5,10 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.calendario.views import ClaseViewSet, TurnoPersonalViewSet
+from apps.extras.web import healthz, inicio
 from apps.liveops.views import TurnoEquipoViewSet
 from apps.notas.views import NotaViewSet
 from apps.tareas.views import RegistroViewSet
-from apps.extras.web import healthz, inicio
 from apps.tv.views import CanalesTVView
 from core.api import ObtenerToken
 

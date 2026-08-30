@@ -1,0 +1,27 @@
+# Configuracion de herramientas del proyecto. NO declara [build-system]: all_in_django no
+# se instala como paquete, se ejecuta con manage.py / docker compose.
+
+[tool.ruff]
+# 120 y no 88/100: el codigo ya escrito cabe entero por debajo (la linea mas larga tiene
+# 116 caracteres), asi que el lint arranca en verde y solo marca defectos REALES en vez de
+# abrir un reformateo de medio proyecto.
+line-length = 120
+target-version = "py314"
+extend-exclude = ["env", "staticfiles", "*/migrations/*", "fixtures"]
+
+[tool.ruff.lint]
+# Ruleset conservador y de alto valor:
+#   E,W  errores y avisos de pycodestyle      F    pyflakes (imports muertos, nombres sin definir)
+#   I    orden de imports (isort)             UP   modismos obsoletos para la version de Python
+# Deliberadamente NO se activan reglas de estilo opinadas (B, SIM, ANN...): meterlas aqui
+# convertiria el job de lint en un refactor y el CI empezaria en rojo.
+select = ["E", "W", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Los tests declaran fixtures y hacen imports diferidos a proposito.
+"conftest.py" = ["F401"]
+"**/tests.py" = ["F401"]
+"**/test_*.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config", "core", "nicegui_ui"]

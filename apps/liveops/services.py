@@ -9,8 +9,8 @@ el modelo calcule bruto/neto/extra al guardar. `guardar_turnos` admite callbacks
 
 import re
 import unicodedata
-from datetime import datetime, time
-from typing import Callable
+from collections.abc import Callable
+from datetime import time
 
 import pandas as pd
 
