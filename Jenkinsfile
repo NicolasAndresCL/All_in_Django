@@ -209,9 +209,15 @@ pipeline {
             echo "Deploy FALLO. Si hubo rollback, el servicio volvio al tag anterior; el respaldo previo queda archivado en la build."
         }
         always {
-            // Nunca dejar el .env.docker (secretos) ni los dumps (datos personales) en el
-            // workspace. Los dumps ya se archivaron en el post success.
+            // Nunca dejar el .env.docker (secretos) en el workspace.
             sh 'rm -f .env.docker || true'
+        }
+        cleanup {
+            // Los dumps se borran en `cleanup`, NO en `always`: el orden de los bloques
+            // post es always -> failure/success -> cleanup, asi que un `rm -rf respaldos`
+            // en `always` se ejecuta ANTES que el archiveArtifacts de `success` y se
+            // llevaba por delante el respaldo que se pretendia guardar. Detectado
+            // ejecutando el pipeline de verdad: "respaldos/*.dump doesn't match anything".
             sh 'rm -rf respaldos || true'
         }
     }
