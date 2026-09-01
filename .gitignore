@@ -18,7 +18,11 @@ db.sqlite3-journal
 
 # Datos reales (volcados de migración, no son fixtures de test para versionar):
 # contienen horarios, tareas y notas personales del autor.
-fixtures/
+# Anclado a la raiz: postman/fixtures/ SI se versiona (CSV de ejemplo de 5 filas).
+/fixtures/
+
+# Esquema OpenAPI generado; se regenera con `manage.py spectacular`.
+schema.yml
 
 # Secretos / config local
 .env

@@ -1,0 +1,3765 @@
+{
+  "info": {
+    "name": "All in Django - API",
+    "description": "Pruebas HTTP de extremo a extremo de la API de All in Django.\n\n**Por que existe**: la suite de pytest usa `force_authenticate`, asi que nunca atraviesa gunicorn, el middleware, la autenticacion por token real ni el rate limiting. Esta coleccion si.\n\n**Como se corre**\n\n- Local, con stack efimero y sin tocar tus datos: `.\\scripts\\probar_api.ps1`\n- A mano: importa tambien `local.postman_environment.json`, rellena `username` y `password`, y usa el Runner **en orden** (hay dependencias entre peticiones).\n- En CI: el job `build` la ejecuta con Newman contra el stack recien levantado.\n\n**Orden**: las carpetas se ejecutan en secuencia y comparten variables (`token`, ids). La 98 limpia lo creado y la 99 va al final porque agota el rate limit de `/api/token/`.\n\nLa fuente de verdad de este archivo es el repositorio (`postman/`), no el workspace de la nube.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "Authorization",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "Token {{token}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Aviso temprano: sin base_url la coleccion falla con errores de red",
+          "// confusos en vez de decir que falta configurar el entorno.",
+          "if (!pm.variables.get('base_url')) {",
+          "    throw new Error('Falta la variable base_url: selecciona el entorno.');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "description": "Sin /api final: la coleccion tambien pega a /healthz/."
+    },
+    {
+      "key": "semana",
+      "value": "2099-01-05",
+      "description": "Lunes de la semana de pruebas. Ano lejano para no chocar con datos reales."
+    },
+    {
+      "key": "semana_destino",
+      "value": "2099-01-12",
+      "description": "Semana destino de copiar_semana (se REEMPLAZA)."
+    },
+    {
+      "key": "token",
+      "value": "",
+      "description": "Lo rellena '00 - Obtener token'. No se versiona con valor."
+    },
+    {
+      "key": "clase_id",
+      "value": ""
+    },
+    {
+      "key": "turno_id",
+      "value": ""
+    },
+    {
+      "key": "turno_domingo_id",
+      "value": ""
+    },
+    {
+      "key": "turno_libre_id",
+      "value": ""
+    },
+    {
+      "key": "turno_equipo_id",
+      "value": ""
+    },
+    {
+      "key": "turno_equipo_babi_id",
+      "value": ""
+    },
+    {
+      "key": "tarea_id",
+      "value": ""
+    },
+    {
+      "key": "tarea2_id",
+      "value": ""
+    },
+    {
+      "key": "nota_id",
+      "value": ""
+    },
+    {
+      "key": "nota_actualizado",
+      "value": ""
+    },
+    {
+      "key": "barrer_id",
+      "value": ""
+    },
+    {
+      "key": "intentos_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Salud y autenticacion",
+      "description": "Lo primero que hay que poder afirmar: que la API esta viva, que **cierra la puerta** sin credenciales y que el token que entrega `/api/token/` sirve. El 401 de aqui es la prueba que la suite de pytest no puede dar: `force_authenticate` se salta justamente esa capa.",
+      "item": [
+        {
+          "name": "Healthz (publico)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz",
+                ""
+              ]
+            },
+            "description": "Readiness que usan las imagenes, Compose y las probes de K8s. Hace SELECT 1.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test(\"status = 'ok'\", function () {",
+                  "    pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});",
+                  "pm.test('Responde en menos de 2 s', function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Raiz de la API SIN token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                ""
+              ]
+            },
+            "description": "Toda la API exige IsAuthenticated. Solo '/' y '/healthz/' son publicos.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "pm.test('Trae el detalle de DRF', function () {",
+                  "    pm.expect(pm.response.json()).to.have.property('detail');",
+                  "});",
+                  "pm.test('No filtra datos en el cuerpo', function () {",
+                  "    pm.expect(pm.response.text()).to.not.include('results');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Obtener token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/token/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "token",
+                ""
+              ]
+            },
+            "description": "Login por token (scope de throttle propio: 10/min). El token se guarda en una variable de coleccion y lo usan todas las peticiones siguientes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Responde JSON', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "});",
+                  "pm.test('Devuelve un token utilizable', function () {",
+                  "    const t = pm.response.json().token;",
+                  "    pm.expect(t).to.be.a('string').and.to.have.length.above(20);",
+                  "    pm.collectionVariables.set('token', t);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Raiz de la API CON token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                ""
+              ]
+            },
+            "description": "El router expone los 5 recursos registrados."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Lista los 5 recursos del router', function () {",
+                  "    const b = pm.response.json();",
+                  "    ['clases', 'turnos-personales', 'turnos-equipo', 'tareas', 'notas']",
+                  "        .forEach(function (k) { pm.expect(b).to.have.property(k); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Esquema OpenAPI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/schema/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "schema",
+                ""
+              ]
+            },
+            "description": "El contrato publicado, generado por drf-spectacular desde el propio codigo. Tambien esta tras IsAuthenticated."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Es un esquema OpenAPI 3', function () {",
+                  "    pm.expect(pm.response.text()).to.include('openapi: 3');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 - Calendario - Clases",
+      "description": "CRUD, filtro por semana, `horas` calculado en el servidor, copia de semanas, PDFs y export.",
+      "item": [
+        {
+          "name": "Crear clase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                ""
+              ]
+            },
+            "description": "`horas` es read-only: lo calcula el modelo en save(). 09:00->10:30 = 1.5.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Lunes\",\n  \"asignatura\": \"POSTMAN-SMOKE Algebra\",\n  \"entrada\": \"09:00\",\n  \"salida\": \"10:30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('El servidor calcula horas = 1.5', function () {",
+                  "    pm.expect(pm.response.json().horas).to.eql(1.5);",
+                  "});",
+                  "pm.collectionVariables.set('clase_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar clases de la semana",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            },
+            "description": "El filtro vive en get_queryset() (el proyecto no usa django-filter)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Sobre de paginacion (count/next/previous/results)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b).to.have.all.keys('count', 'next', 'previous', 'results');",
+                  "    pm.expect(b.results).to.be.an('array');",
+                  "    pm.expect(b.count).to.be.a('number');",
+                  "});",
+                  "pm.test('Solo devuelve la semana pedida', function () {",
+                  "    const r = pm.response.json().results;",
+                  "    pm.expect(r).to.have.length.above(0);",
+                  "    r.forEach(function (c) {",
+                  "        pm.expect(c.semana_inicio).to.eql(pm.collectionVariables.get('semana'));",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de la clase",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/{{clase_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "{{clase_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Trae todos los campos del serializer', function () {",
+                  "    pm.expect(pm.response.json()).to.have.all.keys(",
+                  "        'id', 'semana_inicio', 'dia', 'asignatura', 'entrada', 'salida', 'horas');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar la clase (PATCH) recalcula horas",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/{{clase_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "{{clase_id}}",
+                ""
+              ]
+            },
+            "description": "Cambiar la salida debe recalcular `horas`, no dejarla obsoleta.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"salida\": \"12:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('horas pasa de 1.5 a 3', function () {",
+                  "    pm.expect(pm.response.json().horas).to.eql(3.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reemplazar la clase (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/{{clase_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "{{clase_id}}",
+                ""
+              ]
+            },
+            "description": "PUT reemplaza el recurso entero: exige todos los campos obligatorios.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Martes\",\n  \"asignatura\": \"POSTMAN-SMOKE Calculo\",\n  \"entrada\": \"08:00\",\n  \"salida\": \"09:15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Reemplaza los campos y recalcula horas (1.25)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.dia).to.eql('Martes');",
+                  "    pm.expect(b.horas).to.eql(1.25);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT incompleto -> 400",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/{{clase_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "{{clase_id}}",
+                ""
+              ]
+            },
+            "description": "A diferencia de PATCH, un PUT sin los campos obligatorios debe fallar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"asignatura\": \"POSTMAN-SMOKE sin el resto\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Exige los campos que faltan', function () {",
+                  "    const b = pm.response.json();",
+                  "    ['semana_inicio', 'dia', 'entrada', 'salida'].forEach(function (k) {",
+                  "        pm.expect(b).to.have.property(k);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Copiar la semana a otra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/copiar_semana/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "copiar_semana",
+                ""
+              ]
+            },
+            "description": "REEMPLAZA la semana destino. El modelo recalcula horas al guardar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origen\": \"{{semana}}\",\n  \"destino\": \"{{semana_destino}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Informa cuantas copio', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.copiadas).to.be.above(0);",
+                  "    pm.expect(b.origen).to.eql(pm.collectionVariables.get('semana'));",
+                  "    pm.expect(b.destino).to.eql(pm.collectionVariables.get('semana_destino'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "La semana destino quedo poblada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/?semana_inicio={{semana_destino}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana_destino}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('La copia existe de verdad', function () {",
+                  "    pm.expect(pm.response.json().count).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Imprimir horario de estudio (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/imprimir/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "imprimir",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Imprimir maestro (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/imprimir_maestro/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "imprimir_maestro",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            },
+            "description": "PDF unificado: clases + turnos personales de la misma semana."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar a Excel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/exportar/?formato=excel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "formato",
+                  "value": "excel"
+                }
+              ]
+            },
+            "description": "Exporta el queryset COMPLETO, sin paginar."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga XLSX con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar a PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/exportar/?formato=pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "formato",
+                  "value": "pdf"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Calendario - Turnos personales",
+      "description": "Lo importante de aqui es el **upsert**: el serializer no lleva UniqueTogetherValidator, asi que repetir el POST de un dia lo REEMPLAZA en vez de dar 400. Es el comportamiento del que depende la grilla semanal de la UI.",
+      "item": [
+        {
+          "name": "Crear turno (Lunes 09-18)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                ""
+              ]
+            },
+            "description": "bruto/neto/extra son read-only: los calcula calcular_horas_turno en save().",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Lunes\",\n  \"entrada\": \"09:00\",\n  \"salida\": \"18:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('bruto 9, neto 8 (descuenta 1 h), extra 0', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.bruto).to.eql(9.0);",
+                  "    pm.expect(b.neto).to.eql(8.0);",
+                  "    pm.expect(b.extra).to.eql(0.0);",
+                  "});",
+                  "pm.collectionVariables.set('turno_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "UPSERT: mismo dia otra vez",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                ""
+              ]
+            },
+            "description": "Con unique_together (semana, dia) esto seria un 400. El create() del serializer hace upsert: mismo id, valores nuevos, 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Lunes\",\n  \"entrada\": \"10:00\",\n  \"salida\": \"20:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Reemplaza el registro: MISMO id', function () {",
+                  "    pm.expect(pm.response.json().id).to.eql(",
+                  "        Number(pm.collectionVariables.get('turno_id')));",
+                  "});",
+                  "pm.test('Y recalcula: bruto 10, neto 9', function () {",
+                  "    pm.expect(pm.response.json().bruto).to.eql(10.0);",
+                  "    pm.expect(pm.response.json().neto).to.eql(9.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "El upsert no duplico filas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Sobre de paginacion (count/next/previous/results)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b).to.have.all.keys('count', 'next', 'previous', 'results');",
+                  "    pm.expect(b.results).to.be.an('array');",
+                  "    pm.expect(b.count).to.be.a('number');",
+                  "});",
+                  "pm.test('Sigue habiendo un solo Lunes', function () {",
+                  "    const lunes = pm.response.json().results.filter(function (t) {",
+                  "        return t.dia === 'Lunes';",
+                  "    });",
+                  "    pm.expect(lunes).to.have.lengthOf(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Turno de Domingo: todo es extra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                ""
+              ]
+            },
+            "description": "En domingo TODO el bruto cuenta como extra (core/horarios.py).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Domingo\",\n  \"entrada\": \"10:00\",\n  \"salida\": \"14:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('extra = bruto en domingo', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.bruto).to.eql(4.0);",
+                  "    pm.expect(b.extra).to.eql(4.0);",
+                  "});",
+                  "pm.collectionVariables.set('turno_domingo_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dia libre: horas a cero",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                ""
+              ]
+            },
+            "description": "Sin entrada/salida el modelo fuerza es_libre y deja bruto/neto/extra en 0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Martes\",\n  \"es_libre\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('es_libre con todo a cero y sin horas', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.es_libre).to.be.true;",
+                  "    pm.expect(b.bruto).to.eql(0.0);",
+                  "    pm.expect(b.entrada).to.be.null;",
+                  "});",
+                  "pm.collectionVariables.set('turno_libre_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Imprimir horario laboral (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/imprimir/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "imprimir",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Copiar la semana",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/copiar_semana/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "copiar_semana",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origen\": \"{{semana}}\",\n  \"destino\": \"{{semana_destino}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Copio al menos un turno', function () {",
+                  "    pm.expect(pm.response.json().copiadas).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar a Excel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/exportar/?formato=excel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "formato",
+                  "value": "excel"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga XLSX con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle del turno",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{turno_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{turno_id}}",
+                ""
+              ]
+            },
+            "description": "Debe conservar lo que dejo el upsert (10:00-20:00)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Conserva el resultado del upsert', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.entrada).to.match(/^10:00/);",
+                  "    pm.expect(b.bruto).to.eql(10.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reemplazar el turno (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{turno_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{turno_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Lunes\",\n  \"entrada\": \"08:00\",\n  \"salida\": \"17:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Recalcula: bruto 9, neto 8', function () {",
+                  "    pm.expect(pm.response.json().bruto).to.eql(9.0);",
+                  "    pm.expect(pm.response.json().neto).to.eql(8.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH del turno recalcula",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{turno_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{turno_id}}",
+                ""
+              ]
+            },
+            "description": "Clave: el modelo recalcula en save() COMPLETO. Si el serializer usara update_fields, un PATCH dejaria bruto/neto obsoletos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"salida\": \"12:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('08:00-12:00 -> bruto 4, neto 3', function () {",
+                  "    pm.expect(pm.response.json().bruto).to.eql(4.0);",
+                  "    pm.expect(pm.response.json().neto).to.eql(3.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 - LiveOps - Turnos de equipo",
+      "description": "Mismo upsert, ahora por (semana, trabajador, dia), mas la importacion multipart de CSV/Excel con sus dos caminos de error (400 `ArchivoInvalidoError`, 422 `ImportacionError`).",
+      "item": [
+        {
+          "name": "Crear turno de Nico",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                ""
+              ]
+            },
+            "description": "OJO: 'dia' va con tilde ('Miercoles' no es una opcion valida). Ver el 400 en la carpeta 07.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"trabajador\": \"Nico\",\n  \"dia\": \"Miercoles\",\n  \"entrada\": \"09:00\",\n  \"salida\": \"18:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Rechaza el dia sin tilde: los choices son exactos', function () {",
+                  "    pm.expect(pm.response.json()).to.have.property('dia');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear turno de Nico (dia correcto)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"trabajador\": \"Nico\",\n  \"dia\": \"Miércoles\",\n  \"entrada\": \"09:00\",\n  \"salida\": \"18:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Calcula bruto 9 / neto 8', function () {",
+                  "    pm.expect(pm.response.json().bruto).to.eql(9.0);",
+                  "    pm.expect(pm.response.json().neto).to.eql(8.0);",
+                  "});",
+                  "pm.collectionVariables.set('turno_equipo_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "UPSERT por (semana, trabajador, dia)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"trabajador\": \"Nico\",\n  \"dia\": \"Miércoles\",\n  \"entrada\": \"07:00\",\n  \"salida\": \"16:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Mismo id: reemplazo, no duplicado', function () {",
+                  "    pm.expect(pm.response.json().id).to.eql(",
+                  "        Number(pm.collectionVariables.get('turno_equipo_id')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Turno de otro trabajador (mismo dia)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                ""
+              ]
+            },
+            "description": "La unicidad incluye al trabajador: dos personas SI pueden compartir dia.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"trabajador\": \"Babi\",\n  \"dia\": \"Miércoles\",\n  \"entrada\": \"14:00\",\n  \"salida\": \"23:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Es un registro nuevo, no un upsert', function () {",
+                  "    pm.expect(pm.response.json().id).to.not.eql(",
+                  "        Number(pm.collectionVariables.get('turno_equipo_id')));",
+                  "});",
+                  "pm.collectionVariables.set('turno_equipo_babi_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filtrar por trabajador",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/?semana_inicio={{semana}}&trabajador=Nico",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                },
+                {
+                  "key": "trabajador",
+                  "value": "Nico"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Sobre de paginacion (count/next/previous/results)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b).to.have.all.keys('count', 'next', 'previous', 'results');",
+                  "    pm.expect(b.results).to.be.an('array');",
+                  "    pm.expect(b.count).to.be.a('number');",
+                  "});",
+                  "pm.test('Solo turnos de Nico', function () {",
+                  "    const r = pm.response.json().results;",
+                  "    pm.expect(r).to.have.length.above(0);",
+                  "    r.forEach(function (t) { pm.expect(t.trabajador).to.eql('Nico'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar CSV (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/importar/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "importar",
+                ""
+              ]
+            },
+            "description": "Newman resuelve `src` contra `--working-dir postman`. En la app de escritorio hay que volver a seleccionar el archivo: Postman no importa rutas locales por seguridad.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "archivo",
+                  "type": "file",
+                  "src": "fixtures/turnos_ejemplo.csv",
+                  "description": "CSV con columnas Fecha, Agente, Entrada, Salida, Estado"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Resumen de la importacion', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.filas).to.eql(5);",
+                  "    pm.expect(b.importadas).to.eql(5);",
+                  "    pm.expect(b.errores).to.be.an('array').that.is.empty;",
+                  "});",
+                  "pm.test('Normaliza los nombres a los 4 del equipo', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.agentes).to.have.members(['Babi', 'Jorge', 'Manu', 'Nico']);",
+                  "});",
+                  "pm.test('Deriva la semana desde la fecha', function () {",
+                  "    pm.expect(pm.response.json().semanas).to.include(",
+                  "        pm.collectionVariables.get('semana'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Importar sin archivo -> 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/importar/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "importar",
+                ""
+              ]
+            },
+            "description": "ArchivoInvalidoError pasa por custom_exception_handler y sale con forma {error, tipo}.",
+            "body": {
+              "mode": "formdata",
+              "formdata": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Error de dominio con {error, tipo}', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.tipo).to.eql('ArchivoInvalidoError');",
+                  "    pm.expect(b.error).to.include('archivo');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Imprimir turnos del equipo (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/imprimir/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "imprimir",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Imprimir solo un trabajador (PDF)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/imprimir/?semana_inicio={{semana}}&trabajador=Nico",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "imprimir",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                },
+                {
+                  "key": "trabajador",
+                  "value": "Nico"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar a PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/exportar/?formato=pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "formato",
+                  "value": "pdf"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga PDF con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle del turno de equipo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/{{turno_equipo_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "{{turno_equipo_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Trae el trabajador y las horas calculadas', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.trabajador).to.eql('Nico');",
+                  "    pm.expect(b.bruto).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reemplazar el turno (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/{{turno_equipo_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "{{turno_equipo_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"trabajador\": \"Nico\",\n  \"dia\": \"Miércoles\",\n  \"entrada\": \"09:00\",\n  \"salida\": \"19:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Recalcula: bruto 10, neto 9', function () {",
+                  "    pm.expect(pm.response.json().bruto).to.eql(10.0);",
+                  "    pm.expect(pm.response.json().neto).to.eql(9.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH del turno de equipo",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/{{turno_equipo_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "{{turno_equipo_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entrada\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('10:00-19:00 -> bruto 9, neto 8', function () {",
+                  "    pm.expect(pm.response.json().bruto).to.eql(9.0);",
+                  "    pm.expect(pm.response.json().neto).to.eql(8.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 - Registro de tareas",
+      "description": "`duracion` es un DurationField: viaja como `\"HH:MM:SS\"` y `horas` es una propiedad derivada. `resumen/` es el dashboard entero calculado en el backend.",
+      "item": [
+        {
+          "name": "Crear tarea (1 h 30)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                ""
+              ]
+            },
+            "description": "Formato DRF del DurationField: '[DD] [HH:[MM:]]ss'.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"2099-01-05\",\n  \"proyecto\": \"POSTMAN-SMOKE\",\n  \"tarea\": \"Probar la API con Postman\",\n  \"duracion\": \"01:30:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('horas se deriva de duracion', function () {",
+                  "    pm.expect(pm.response.json().horas).to.eql(1.5);",
+                  "});",
+                  "pm.collectionVariables.set('tarea_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear segunda tarea (dia siguiente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                ""
+              ]
+            },
+            "description": "Dos dias consecutivos: da racha de 2 en el resumen.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"2099-01-06\",\n  \"proyecto\": \"POSTMAN-SMOKE\",\n  \"tarea\": \"Escribir aserciones\",\n  \"duracion\": \"02:15:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('2 h 15 = 2.25 horas', function () {",
+                  "    pm.expect(pm.response.json().horas).to.eql(2.25);",
+                  "});",
+                  "pm.collectionVariables.set('tarea2_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filtrar por proyecto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/?proyecto=POSTMAN-SMOKE",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "proyecto",
+                  "value": "POSTMAN-SMOKE"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Sobre de paginacion (count/next/previous/results)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b).to.have.all.keys('count', 'next', 'previous', 'results');",
+                  "    pm.expect(b.results).to.be.an('array');",
+                  "    pm.expect(b.count).to.be.a('number');",
+                  "});",
+                  "pm.test('Solo tareas del proyecto de prueba', function () {",
+                  "    const r = pm.response.json().results;",
+                  "    pm.expect(r).to.have.lengthOf(2);",
+                  "    r.forEach(function (t) { pm.expect(t.proyecto).to.eql('POSTMAN-SMOKE'); });",
+                  "});",
+                  "pm.test('Ordena por fecha descendente', function () {",
+                  "    const f = pm.response.json().results.map(function (t) { return t.fecha; });",
+                  "    pm.expect(f).to.eql(f.slice().sort().reverse());",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resumen (dashboard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/resumen/?proyecto=POSTMAN-SMOKE",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "resumen",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "proyecto",
+                  "value": "POSTMAN-SMOKE"
+                }
+              ]
+            },
+            "description": "Respeta ?proyecto= porque usa get_queryset(). Calculo puro en services.py."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Responde JSON', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "});",
+                  "pm.test('Trae las metricas y las 5 series', function () {",
+                  "    pm.expect(pm.response.json()).to.have.all.keys(",
+                  "        'tareas', 'proyectos', 'horas_total', 'racha_dias', 'promedio_diario',",
+                  "        'promedio_semanal', 'por_proyecto', 'por_tarea', 'por_dia',",
+                  "        'por_semana', 'por_dia_semana');",
+                  "});",
+                  "pm.test('Suma 3.75 h en 2 tareas', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.tareas).to.eql(2);",
+                  "    pm.expect(b.horas_total).to.be.closeTo(3.75, 0.01);",
+                  "});",
+                  "pm.test('Racha 0: las fechas de prueba no son de hoy ni de ayer', function () {",
+                  "    // calcular_racha() cuenta hacia atras DESDE HOY: si el registro mas",
+                  "    // reciente no es de hoy ni de ayer, la racha es 0. Con fechas de 2099",
+                  "    // el valor correcto es 0, y afirmarlo protege esa regla.",
+                  "    pm.expect(pm.response.json().racha_dias).to.eql(0);",
+                  "});",
+                  "pm.test('Las series son arrays', function () {",
+                  "    const b = pm.response.json();",
+                  "    ['por_proyecto', 'por_tarea', 'por_dia', 'por_semana', 'por_dia_semana']",
+                  "        .forEach(function (k) { pm.expect(b[k]).to.be.an('array'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar a Excel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/exportar/?formato=excel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "formato",
+                  "value": "excel"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga XLSX con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de la tarea",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/{{tarea_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "{{tarea_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('duracion viaja como HH:MM:SS y horas la deriva', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.duracion).to.eql('01:30:00');",
+                  "    pm.expect(b.horas).to.eql(1.5);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reemplazar la tarea (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/{{tarea_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "{{tarea_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"2099-01-05\",\n  \"proyecto\": \"POSTMAN-SMOKE\",\n  \"tarea\": \"Tarea reemplazada por PUT\",\n  \"duracion\": \"03:00:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('horas sigue a duracion (3 h)', function () {",
+                  "    pm.expect(pm.response.json().horas).to.eql(3.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH de la duracion",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/{{tarea_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "{{tarea_id}}",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"duracion\": \"00:45:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('45 min = 0.75 h', function () {",
+                  "    pm.expect(pm.response.json().horas).to.eql(0.75);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 - Notas",
+      "description": "CRUD simple, pero con dos content-types de descarga y timestamps automaticos.",
+      "item": [
+        {
+          "name": "Crear nota en Markdown",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notas/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"POSTMAN-SMOKE nota\",\n  \"contenido\": \"# Titulo\\n\\nCuerpo **en negrita**.\",\n  \"formato\": \"md\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "pm.test('Timestamps automaticos', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.creado).to.be.a('string');",
+                  "    pm.expect(b.actualizado).to.be.a('string');",
+                  "    pm.collectionVariables.set('nota_actualizado', b.actualizado);",
+                  "});",
+                  "pm.collectionVariables.set('nota_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar la nota toca 'actualizado'",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                ""
+              ]
+            },
+            "description": "`actualizado` es auto_now: debe avanzar en cada guardado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contenido\": \"# Titulo\\n\\nCuerpo **editado**.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test(\"'actualizado' avanzo\", function () {",
+                  "    const antes = new Date(pm.collectionVariables.get('nota_actualizado'));",
+                  "    const ahora = new Date(pm.response.json().actualizado);",
+                  "    pm.expect(ahora.getTime()).to.be.at.least(antes.getTime());",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar como Markdown",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/exportar/?fmt=md",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "fmt",
+                  "value": "md"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga MD con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/markdown');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});",
+                  "pm.test('Devuelve el markdown CRUDO, sin convertir', function () {",
+                  "    pm.expect(pm.response.text()).to.include('# Titulo');",
+                  "    pm.expect(pm.response.text()).to.include('**editado**');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exportar como texto plano",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/exportar/?fmt=txt",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                "exportar",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "fmt",
+                  "value": "txt"
+                }
+              ]
+            },
+            "description": "markdown_a_texto() quita el marcado; el content-type cambia a text/plain."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga TXT con Content-Disposition', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/plain');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});",
+                  "pm.test('Ya no hay marcado de markdown', function () {",
+                  "    pm.expect(pm.response.text()).to.not.include('**');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar notas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/notas/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Sobre de paginacion (count/next/previous/results)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b).to.have.all.keys('count', 'next', 'previous', 'results');",
+                  "    pm.expect(b.results).to.be.an('array');",
+                  "    pm.expect(b.count).to.be.a('number');",
+                  "});",
+                  "pm.test('La mas reciente primero (-actualizado)', function () {",
+                  "    const r = pm.response.json().results;",
+                  "    pm.expect(r[0].id).to.eql(Number(pm.collectionVariables.get('nota_id')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de la nota",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Sigue en formato md tras el PATCH', function () {",
+                  "    pm.expect(pm.response.json().formato).to.eql('md');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reemplazar la nota (PUT) cambiando el formato",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                ""
+              ]
+            },
+            "description": "`titulo` y `contenido` admiten vacio; `formato` solo acepta 'md' o 'txt'.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"POSTMAN-SMOKE nota en txt\",\n  \"contenido\": \"Texto plano, sin marcado.\",\n  \"formato\": \"txt\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Cambia a txt y reemplaza el contenido', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.formato).to.eql('txt');",
+                  "    pm.expect(b.contenido).to.not.include('#');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Formato invalido -> 400",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                ""
+              ]
+            },
+            "description": "Los choices del modelo son md/txt: 'pdf' no es una opcion.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titulo\": \"POSTMAN-SMOKE\",\n  \"contenido\": \"x\",\n  \"formato\": \"pdf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Senala el campo formato', function () {",
+                  "    pm.expect(pm.response.json()).to.have.property('formato');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 - TV Chile",
+      "description": "Solo lectura y **dependiente de una web ajena**: por eso los tests aceptan 502 (`ScraperError`) como resultado valido. Marcar el CI en rojo porque un sitio externo se cayo seria ruido, no una senal.",
+      "item": [
+        {
+          "name": "Listar canales",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tv/canales/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tv",
+                "canales",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200, 502', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 502]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Forma de la respuesta (sin paginar)', function () {",
+                  "        const b = pm.response.json();",
+                  "        pm.expect(b).to.have.all.keys('total', 'canales');",
+                  "        pm.expect(b.canales).to.have.lengthOf(b.total);",
+                  "    });",
+                  "    pm.test('Cada canal trae name y url', function () {",
+                  "        const c = pm.response.json().canales;",
+                  "        if (c.length) {",
+                  "            pm.expect(c[0]).to.have.property('name');",
+                  "            pm.expect(c[0]).to.have.property('url');",
+                  "        }",
+                  "    });",
+                  "} else {",
+                  "    pm.test('Si falla la fuente, es un 502 con {error, tipo}', function () {",
+                  "        pm.expect(pm.response.json().tipo).to.eql('ScraperError');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buscar canales",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tv/canales/?buscar=tv",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tv",
+                "canales",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "buscar",
+                  "value": "tv"
+                }
+              ]
+            },
+            "description": "Filtro case-insensitive sobre el nombre."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200, 502', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 502]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Todos los resultados contienen el texto', function () {",
+                  "        pm.response.json().canales.forEach(function (c) {",
+                  "            pm.expect(c.name.toLowerCase()).to.include('tv');",
+                  "        });",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 - Errores y contratos",
+      "description": "Los caminos infelices. Un contrato de error que cambia sin avisar rompe clientes tan silenciosamente como un campo renombrado.",
+      "item": [
+        {
+          "name": "Recurso inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/99999999/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "99999999",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([404]);",
+                  "});",
+                  "pm.test('404 con el detail de DRF', function () {",
+                  "    pm.expect(pm.response.json()).to.have.property('detail');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dia fuera de los choices -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Lunesito\",\n  \"asignatura\": \"POSTMAN-SMOKE\",\n  \"entrada\": \"09:00\",\n  \"salida\": \"10:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Senala el campo culpable', function () {",
+                  "    pm.expect(pm.response.json()).to.have.property('dia');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Falta un campo obligatorio -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"semana_inicio\": \"{{semana}}\",\n  \"dia\": \"Lunes\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Enumera TODOS los campos que faltan', function () {",
+                  "    const b = pm.response.json();",
+                  "    ['asignatura', 'entrada', 'salida'].forEach(function (k) {",
+                  "        pm.expect(b).to.have.property(k);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "copiar_semana sin cuerpo -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/clases/copiar_semana/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "copiar_semana",
+                ""
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "pm.test('Explica que faltan origen y destino', function () {",
+                  "    pm.expect(pm.response.json().detail).to.include('origen');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token invalido -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                ""
+              ]
+            },
+            "description": "Un token de otra base da 401, no 403: es el sintoma que la UI diagnostica en Inicio.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.headers.add({key: 'Authorization', value: 'Token no-existe'});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "pm.test('Dice que el token es invalido', function () {",
+                  "    // El mensaje viene traducido ('Token invalido.'), asi que se compara en",
+                  "    // minusculas y sin depender de la tilde.",
+                  "    pm.expect(pm.response.json().detail.toLowerCase()).to.include('token');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Metodo no permitido -> 405",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/token/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "token",
+                ""
+              ]
+            },
+            "description": "/api/token/ es solo POST.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 405', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([405]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "98 - Limpieza",
+      "description": "Contra el stack efimero sobra (la base muere con `down -v`), pero permite correr la coleccion contra cualquier otro entorno sin dejar rastro. Las copias de semana se borran en bucle con `setNextRequest`, porque no se sabe de antemano cuantas son.",
+      "item": [
+        {
+          "name": "Borrar clase",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/{{clase_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "{{clase_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar turno personal",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{turno_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{turno_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar turno de domingo",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{turno_domingo_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{turno_domingo_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar dia libre",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{turno_libre_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{turno_libre_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar tarea 1",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/{{tarea_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "{{tarea_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar tarea 2",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/{{tarea2_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "{{tarea2_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar nota",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/notas/{{nota_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "notas",
+                "{{nota_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Barrer restos: listar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/?semana_inicio={{semana}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "const r = pm.response.json().results;",
+                  "if (r.length) {",
+                  "    pm.collectionVariables.set('barrer_id', r[0].id);",
+                  "    postman.setNextRequest('Barrer restos: borrar uno');",
+                  "} else {",
+                  "    pm.test('Semana de turnos de equipo vacia', function () {",
+                  "        pm.expect(pm.response.json().count).to.eql(0);",
+                  "    });",
+                  "    postman.setNextRequest('Barrer copias: listar');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Barrer restos: borrar uno",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-equipo/{{barrer_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-equipo",
+                "{{barrer_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});",
+                  "postman.setNextRequest('Barrer restos: listar');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Barrer copias: listar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/?semana_inicio={{semana_destino}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana_destino}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "const r = pm.response.json().results;",
+                  "if (r.length) {",
+                  "    pm.collectionVariables.set('barrer_id', r[0].id);",
+                  "    postman.setNextRequest('Barrer copias: borrar una');",
+                  "} else {",
+                  "    pm.test('Semana destino de clases vacia', function () {",
+                  "        pm.expect(pm.response.json().count).to.eql(0);",
+                  "    });",
+                  "    postman.setNextRequest('Barrer turnos copiados: listar');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Barrer copias: borrar una",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clases/{{barrer_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "clases",
+                "{{barrer_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});",
+                  "postman.setNextRequest('Barrer copias: listar');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Barrer turnos copiados: listar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/?semana_inicio={{semana_destino}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "semana_inicio",
+                  "value": "{{semana_destino}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "const r = pm.response.json().results;",
+                  "if (r.length) {",
+                  "    pm.collectionVariables.set('barrer_id', r[0].id);",
+                  "    postman.setNextRequest('Barrer turnos copiados: borrar uno');",
+                  "} else {",
+                  "    pm.test('Semana destino de turnos vacia', function () {",
+                  "        pm.expect(pm.response.json().count).to.eql(0);",
+                  "    });",
+                  "    postman.setNextRequest('Agotar el rate limit de /api/token/');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Barrer turnos copiados: borrar uno",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/turnos-personales/{{barrer_id}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "turnos-personales",
+                "{{barrer_id}}",
+                ""
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404]);",
+                  "});",
+                  "postman.setNextRequest('Barrer turnos copiados: listar');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "99 - Limites (rate limiting)",
+      "description": "Va **al ultimo a proposito**: agota el scope 'token' (10/min). Si corriera antes, el resto de la coleccion se quedaria sin poder pedir credenciales.",
+      "item": [
+        {
+          "name": "Agotar el rate limit de /api/token/",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/token/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "token",
+                ""
+              ]
+            },
+            "description": "Se repite a si misma hasta recibir 429.\n\n**Por que el tope es 40 y no 11**: `THROTTLE_TOKEN` es 10/min, pero los contadores de DRF viven en el cache de Django y el proyecto no define `CACHES`, asi que usa `LocMemCache`, que es **por proceso**. Con los 3 workers de gunicorn del contenedor, cada uno lleva su propia cuenta y el limite efectivo es ~3x el configurado. Esta prueba afirma que el freno EXISTE; el numero exacto no es de fiar mientras el cache no sea compartido (ver pendientes.md).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const TOPE = 40;  // 10/min x 3 workers, con margen",
+                  "const n = Number(pm.collectionVariables.get('intentos_token') || 0) + 1;",
+                  "pm.collectionVariables.set('intentos_token', n);",
+                  "",
+                  "if (pm.response.code === 429) {",
+                  "    pm.test('El throttle frena /api/token/ (intento ' + n + ')', function () {",
+                  "        pm.expect(n).to.be.at.most(TOPE);",
+                  "    });",
+                  "    pm.test('429 con Retry-After y detail', function () {",
+                  "        pm.expect(pm.response.headers.get('Retry-After')).to.not.be.null;",
+                  "        pm.expect(pm.response.json()).to.have.property('detail');",
+                  "    });",
+                  "    pm.collectionVariables.unset('intentos_token');",
+                  "    postman.setNextRequest(null);",
+                  "} else if (n >= TOPE) {",
+                  "    pm.test('FALLO: ' + TOPE + ' intentos sin 429', function () {",
+                  "        pm.expect.fail('THROTTLE_TOKEN no esta frenando /api/token/');",
+                  "    });",
+                  "    pm.collectionVariables.unset('intentos_token');",
+                  "    postman.setNextRequest(null);",
+                  "} else {",
+                  "    postman.setNextRequest('Agotar el rate limit de /api/token/');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
