@@ -10,7 +10,8 @@
     (DEBUG=False + SECURE_HTTPS=True), asi que no aparece jamas en un pytest normal.
 
 .PARAMETER Rapido
-    Salta el smoke de arranque del stack (lo mas lento). Util mientras se itera.
+    Salta los dos pasos lentos con Docker (arranque del stack y pruebas HTTP de la API).
+    Util mientras se itera.
 
 .EXAMPLE
     .\scripts\verificar.ps1
@@ -54,6 +55,13 @@ Ejecutar 'pytest + cobertura (>=80%)' {
     & $py -m pytest -q -rs --cov=apps --cov=core --cov=nicegui_ui --cov-fail-under=80
 }
 
+# 2b) el esquema OpenAPI es el contrato publicado: si un endpoint queda sin anotar, sale
+#     documentado como algo que no es. --fail-on-warn convierte eso en un fallo.
+Ejecutar 'esquema OpenAPI (--fail-on-warn)' {
+    $env:SECRET_KEY = 'test-secret-key-not-for-prod'; $env:DEBUG = 'True'
+    & $py manage.py spectacular --validate --fail-on-warn --file $env:TEMP\schema_verificar.yml
+}
+
 # 3) hardening de produccion: el olvidado. Clave efimera porque el gate de core/conf.py
 #    exige >=50 chars y >=5 distintos (con una debil fallaria por la clave, no por el
 #    hardening, que es lo que se quiere medir).
@@ -88,6 +96,18 @@ if (-not $Rapido) {
     }
 } else {
     Write-Host "  --  build + arranque del stack (saltado por -Rapido)" -ForegroundColor DarkGray
+}
+
+# 5) pruebas HTTP de la API con la coleccion Postman, igual que el job `build` del CI.
+#    Va contra su PROPIO stack efimero (docker-compose.test.yml), no contra el de arriba:
+#    la coleccion escribe y borra datos, y el stack normal corre sobre el volumen con los
+#    datos reales. Si el CI ejercita la API viva y este script no, deja de reproducirlo.
+if (-not $Rapido) {
+    Ejecutar 'API por HTTP (coleccion Postman)' {
+        & "$PSScriptRoot\probar_api.ps1"
+    }
+} else {
+    Write-Host "  --  API por HTTP (saltado por -Rapido)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

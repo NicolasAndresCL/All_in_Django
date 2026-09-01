@@ -4,7 +4,7 @@ name: CI
 # segundos ya iba a rechazar. La regla rectora es que el CI verifique que el proyecto
 # CONSTRUYE Y ARRANCA, no solo que compila: por eso el job `build` levanta el stack.
 #
-#   lint -> test ------> build (build + smoke de arranque)
+#   lint -> test ------> build (build + arranque + pruebas HTTP con newman)
 #        -> test-postgres
 #        -> deploy-check
 
@@ -59,6 +59,15 @@ jobs:
         run: |
           pytest -rs --cov=apps --cov=core --cov=nicegui_ui \
                  --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+      # El esquema es el contrato publicado de la API y la referencia contra la que el
+      # test de contrato valida la coleccion Postman. Con --fail-on-warn, un endpoint sin
+      # anotar (que saldria documentado como algo que no es) rompe el build.
+      - name: Validar el esquema OpenAPI
+        env:
+          SECRET_KEY: ci-secret-key-not-for-prod
+          DEBUG: "True"
+        run: python manage.py spectacular --validate --fail-on-warn --file /dev/null
+
       - name: Resumen de cobertura
         if: always()
         run: |
@@ -189,6 +198,31 @@ jobs:
           done
           echo "Timeout esperando healthy."
           exit 1
+
+      # El unico momento del pipeline con una API de verdad: gunicorn, WhiteNoise, el
+      # middleware, la autenticacion por token y el rate limiting. La suite de pytest usa
+      # force_authenticate y nunca atraviesa esa capa.
+      #
+      # El API_TOKEN del .env.docker de arriba es un placeholder que NO corresponde a
+      # ningun token de la base (sirve para que arranque la UI): hace falta un usuario
+      # real, y la coleccion pide su token por POST /api/token/.
+      #
+      # Todo en un paso para que la clave efimera no viaje por GITHUB_ENV.
+      - name: Ejercitar la API con la coleccion Postman
+        run: |
+          PASS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          docker compose --env-file .env.docker exec -T \
+            -e DJANGO_SUPERUSER_USERNAME=postman \
+            -e DJANGO_SUPERUSER_EMAIL=postman@example.invalid \
+            -e DJANGO_SUPERUSER_PASSWORD="$PASS" \
+            api python manage.py createsuperuser --noinput
+          # --working-dir: donde la peticion de importar busca fixtures/turnos_ejemplo.csv.
+          npx --yes newman run postman/all_in_django.postman_collection.json \
+            -e postman/local.postman_environment.json \
+            --working-dir postman \
+            --env-var base_url=http://localhost:8000 \
+            --env-var username=postman \
+            --env-var password="$PASS"
 
       - name: Diagnostico si algo fallo
         if: failure()
