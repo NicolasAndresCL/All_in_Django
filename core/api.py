@@ -7,11 +7,13 @@ rate limit propio.
 """
 
 from django.http import HttpResponse
+from drf_spectacular.utils import extend_schema
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.decorators import action
 from rest_framework.throttling import ScopedRateThrottle
 
 from core.export import generar_excel, generar_pdf
+from core.openapi import MIME_PDF, MIME_XLSX, PARAM_FORMATO, RESP_EXPORT
 
 
 class ObtenerToken(ObtainAuthToken):
@@ -31,6 +33,11 @@ class ExportMixin:
 
     export_titulo = "datos"
 
+    @extend_schema(
+        summary="Exporta el listado completo a Excel o PDF",
+        parameters=[PARAM_FORMATO],
+        responses={(200, MIME_XLSX): RESP_EXPORT, (200, MIME_PDF): RESP_EXPORT},
+    )
     @action(detail=False, methods=["get"])
     def exportar(self, request):
         formato = request.query_params.get("formato", "excel").lower()

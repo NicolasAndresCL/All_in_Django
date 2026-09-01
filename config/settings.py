@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",  # tokens de API (modelo Token; se crean en admin o CLI)
+    "drf_spectacular",  # genera el esquema OpenAPI desde el propio codigo
     "apps.calendario",
     "apps.liveops",
     "apps.tareas",
@@ -108,6 +109,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
     "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    # El esquema OpenAPI lo genera drf-spectacular a partir de los serializers y de las
+    # anotaciones @extend_schema de las acciones extra. Es el contrato publicado de la API
+    # (/api/schema/) y la referencia contra la que se valida la coleccion Postman.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Rate limiting (rates configurables por env; ver core/conf.py).
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
@@ -118,6 +123,21 @@ REST_FRAMEWORK = {
         "user": env.THROTTLE_USER,
         "token": env.THROTTLE_TOKEN,  # scope del endpoint /api/token/
     },
+}
+
+# ─── OpenAPI (drf-spectacular) ───────────────────────────────────────────────
+# SERVE_INCLUDE_SCHEMA=False: el propio endpoint del esquema no se documenta a si mismo.
+# El esquema NO es publico: queda tras IsAuthenticated como el resto de /api/ (solo "/" y
+# "/healthz/" son publicos). Se consulta con sesion de admin o con token.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "All in Django - API",
+    "DESCRIPTION": (
+        "API REST de All in Django: calendario de estudio, turnos personales y de equipo, "
+        "registro de tareas, notas y parrilla de TV chilena. Autenticacion por token "
+        "(`Authorization: Token <clave>`) obtenido en `/api/token/`."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 # ─── Password validators ─────────────────────────────────────────────────────

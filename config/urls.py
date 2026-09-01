@@ -1,7 +1,8 @@
-"""URLconf raíz: Django Admin + API DRF (router) + endpoint TV + login navegable."""
+"""URLconf raíz: Django Admin + API DRF (router) + esquema OpenAPI + TV + login navegable."""
 
 from django.contrib import admin
 from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
 
 from apps.calendario.views import ClaseViewSet, TurnoPersonalViewSet
@@ -25,6 +26,10 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/token/", ObtenerToken.as_view(), name="api-token"),  # login por token
     path("api/tv/canales/", CanalesTVView.as_view(), name="tv-canales"),
+    # Esquema OpenAPI y visor. NO son publicos: heredan IsAuthenticated como el resto
+    # de /api/, asi que se consultan con sesion de admin o con token.
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path("api/schema/swagger-ui/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),  # login para la API navegable
 ]
