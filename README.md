@@ -80,7 +80,8 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 | Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root, `HEALTHCHECK`), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
 | Orquestación local | `docker-compose.yml` (build local) | Postgres 18 + API + UI (healthchecks + `depends_on`) |
 | Respaldos | `scripts/respaldar_bd.ps1`, `scripts/restaurar_bd.ps1` | dumps `-Fc` verificados del volumen |
-| CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build **y arranque** |
+| CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build, arranque **y pruebas HTTP** |
+| Pruebas de API | `postman/` + `docker-compose.test.yml` + `scripts/probar_api.ps1` | stack efímero + colección Postman (Newman) |
 | Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver+sha, **no** `latest`) |
 | **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de GHCR por compose, con respaldo previo y **rollback** |
 | Nube | `infra/terraform/` (AWS EC2 + RDS Postgres 18) | infra en la nube (skeleton) |
@@ -354,6 +355,61 @@ los enlaces `next` (así lo hace `nicegui_ui/api_client.py`).
 | `/api/notas/{id}/exportar/?fmt=md\|txt` | GET | descarga la nota |
 | `/api/tv/canales/?buscar=` | GET | canales (scraping, cache 1h) |
 | `/api/<recurso>/exportar/?formato=excel\|pdf` | GET | export en clases/turnos/tareas |
+| `/api/schema/` | GET | esquema **OpenAPI 3** generado del código (drf-spectacular) |
+| `/api/schema/swagger-ui/` | GET | visor interactivo del esquema (pide sesión de admin) |
+
+### El contrato: esquema OpenAPI
+
+El esquema lo genera **drf-spectacular** a partir de los serializers y de las anotaciones
+`@extend_schema`, así que no puede quedarse desfasado como una tabla escrita a mano. Las
+acciones que devuelven archivos (`imprimir`, `exportar`, `notas/…/exportar`) van anotadas en
+[`core/openapi.py`](core/openapi.py): sin eso el esquema declararía `application/json` para un
+PDF, que es peor que no documentarlo.
+
+```powershell
+python manage.py spectacular --validate --fail-on-warn --file schema.yml
+```
+
+El esquema **no es público**: hereda `IsAuthenticated` como el resto de `/api/`. Se consulta
+con token o con sesión de admin (para el Swagger UI, entra antes en `/admin/`).
+
+### Probar la API con Postman
+
+La suite de pytest usa `force_authenticate`: **nunca atraviesa** gunicorn, WhiteNoise, el
+middleware, la autenticación por token real ni el rate limiting. La colección de `postman/`
+sí: 79 peticiones y ~183 aserciones contra una API de verdad.
+
+```powershell
+.\scripts\probar_api.ps1                              # levanta, prueba y limpia (~17 s)
+.\scripts\probar_api.ps1 -Carpeta '04 - Registro de tareas'
+.\scripts\probar_api.ps1 -Conservar -Informe .\newman.json   # para depurar un fallo
+```
+
+El script levanta [`docker-compose.test.yml`](docker-compose.test.yml) — un stack **aparte**,
+con base vacía, puertos altos (8010/5434) y **sin volumen** — crea un usuario de pruebas y
+corre la colección con Newman (vía `npx`, no hace falta instalarlo). **Tus datos no se tocan
+en ningún momento**: el stack de pruebas ni siquiera monta `all_in_django_pgdata`.
+
+| Archivo | Qué es |
+|---|---|
+| `postman/all_in_django.postman_collection.json` | la colección (v2.1.0). **Fuente de verdad**, versionada |
+| `postman/local.postman_environment.json` | plantilla de entorno: `base_url`, `username`, `password`. Sin secretos |
+| `postman/fixtures/turnos_ejemplo.csv` | archivo de ejemplo para `turnos-equipo/importar/` |
+
+Las carpetas se ejecutan **en orden** y comparten variables (`token`, ids): la 00 obtiene el
+token, la 98 borra lo creado y la 99 va al final porque **agota el rate limit** de
+`/api/token/`. Además de los caminos felices, se afirman los infelices: 401 sin token, 400 por
+`dia` fuera de los choices, 405, y que los errores de dominio conserven la forma
+`{"error", "tipo"}`.
+
+**A mano, en la app de Postman**: importa la colección y el entorno, rellena `username` y
+`password`, y usa el Runner. Una limitación conocida: Postman no importa rutas de archivos
+locales, así que en la petición *Importar CSV* hay que volver a seleccionar
+`postman/fixtures/turnos_ejemplo.csv`.
+
+> Si la corres contra un entorno con datos reales, usa solo las carpetas de lectura. Las de
+> escritura marcan todo lo que crean (`POSTMAN-SMOKE`, semanas de 2099) y lo borran al final,
+> pero un fallo a medio camino deja residuos.
 
 ## UI NiceGUI (opcional)
 
@@ -511,9 +567,12 @@ pytest nicegui_ui/tests                 # UI: cliente + smoke de páginas (HTTP 
 # Cobertura con coverage.py (vía pytest-cov):
 pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term-missing
 
+# Pruebas HTTP contra una API de verdad (stack efímero; no toca tus datos):
+.\scripts\probar_api.ps1
+
 # Todo lo que verifica el CI, en el mismo orden (correr ANTES de commitear):
 .\scripts\verificar.ps1
-.\scripts\verificar.ps1 -Rapido       # salta el arranque del stack (lo más lento)
+.\scripts\verificar.ps1 -Rapido       # salta los dos pasos con Docker (lo más lento)
 ```
 
 ### Lo que verifica el CI
@@ -524,14 +583,17 @@ algo que un lint de segundos ya iba a rechazar:
 | Job | Qué comprueba |
 |---|---|
 | `lint` | `ruff check` (imports muertos, orden, modismos obsoletos). Config en `pyproject.toml` |
-| `test` | pytest en SQLite con **`--cov-fail-under=80`**: la cobertura es condición de fallo, no un número decorativo |
+| `test` | pytest en SQLite con **`--cov-fail-under=80`** (la cobertura es condición de fallo, no un número decorativo) y validación del **esquema OpenAPI** con `--fail-on-warn` |
 | `test-postgres` | la misma suite contra **Postgres 18 real** (servicio de Actions), con `-rs` para que los saltados sean visibles |
 | `deploy-check` | `manage.py check --deploy --fail-level WARNING` con `DEBUG=False` + `SECURE_HTTPS=True` y una `SECRET_KEY` efímera |
-| `build` | construye ambas imágenes **y levanta el stack**, esperando a que los tres servicios queden `healthy` |
+| `build` | construye ambas imágenes, **levanta el stack** esperando a que los tres servicios queden `healthy` y le **pasa la colección Postman con Newman** |
 
 El último es el que importa: un CI que solo comprueba que la imagen *compila* da falsa
 seguridad, porque los fallos reales (migraciones, conexión a la base, token de la UI) aparecen
-al **arrancar**.
+al **arrancar** — y algunos, solo al *usarla*. Por eso el job no se conforma con el
+healthcheck: crea un usuario real dentro del contenedor y ejercita la API por HTTP. El
+`API_TOKEN` que el job fabrica es un placeholder que no corresponde a ningún token de la base
+(basta para que la UI arranque), así que las pruebas piden el suyo por `POST /api/token/`.
 
 `.githooks/pre-commit` corre `ruff` sobre los `.py` del commit y `hadolint` sobre los
 Dockerfiles tocados, filtrando por archivos: un commit de documentación no espera a que
@@ -541,8 +603,11 @@ arranquen tres contenedores. Se activa una sola vez con `git config core.hooksPa
 > estilo global que merece su propio commit, no colarse en una refactorización de
 > infraestructura.
 
-224 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
-impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **seguridad**
+229 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **contrato de la
+API** (`test_contrato_api.py`: compara el esquema OpenAPI con la colección Postman y falla si
+un endpoint no tiene ni una petición que lo visite — es lo que impide que la colección
+envejezca en silencio) + **seguridad**
 (`test_seguridad.py`: 401 sin token, obtención/uso del token, rate limit del login con 429,
 validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitarios con
 `unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la
@@ -558,6 +623,10 @@ Deps de test en `requirements-dev.txt` (`pytest`, `pytest-asyncio`, `pytest-djan
 `pytest-cov`, `coverage`, `responses`), que **incluye también `nicegui_ui/requirements.txt`**:
 los tests de la UI importan `gantt.py`/`charts.py` y las vistas (usan plotly/nicegui) y sin
 esas deps la recolección de pytest falla con exit 2. `unittest.mock` es de la stdlib.
+
+Las pruebas HTTP (colección Postman) son el único punto que **no** es Python: las ejecuta
+**Newman** vía `npx --yes newman`, así que basta con tener Node instalado; no se añade nada a
+`requirements-dev.txt` ni se instala nada global.
 
 ## Autor
 
