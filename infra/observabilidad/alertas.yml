@@ -1,0 +1,82 @@
+# Reglas de alerta de All in Django.
+#
+# QUE VIGILAN Y POR QUE
+#
+# El healthcheck de las imagenes hace `SELECT 1` y responde "el proceso vive". No puede
+# ver el fallo que este proyecto ya sufrio: el stack entero en `healthy` mientras la UI
+# devolvia 401 en cada vista por un API_TOKEN que no correspondia a ningun token de la
+# base. Para el healthcheck todo estaba bien; para el usuario, nada funcionaba.
+#
+# Estas reglas miran lo que el healthcheck no puede: el REPARTO DE RESPUESTAS. Un 401
+# aislado es normal (alguien se equivoca de token). Un 401 en la mayoria de las
+# respuestas durante minutos significa que un cliente esta roto de forma sistematica.
+#
+# La serie base es `django_http_responses_total_by_status_total`, del middleware de
+# django-prometheus. `test_observabilidad.py` afirma que sigue existiendo: si la
+# renombraran, estas alertas dejarian de dispararse sin dar ningun error.
+
+groups:
+  - name: all_in_django
+    rules:
+      # --- Disponibilidad -------------------------------------------------------
+      - alert: ApiCaida
+        expr: up{job="all_in_django"} == 0
+        for: 1m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "La API no responde al scrape"
+          detalle: >-
+            Prometheus lleva 1 minuto sin poder leer /metrics de {{ $labels.instance }}.
+            O el proceso esta caido, o el METRICS_TOKEN dejo de coincidir.
+
+      # --- El fallo que el healthcheck NO ve ------------------------------------
+      - alert: Ratio401Alto
+        # Mas del 40% de las respuestas son 401 durante 2 minutos. Umbral alto a
+        # proposito: la API rechaza peticiones sin token por diseno (la coleccion
+        # Postman provoca 401s a proposito), asi que lo anomalo no es que haya 401,
+        # es que sean la mayoria.
+        expr: >-
+          sum(rate(django_http_responses_total_by_status_total{status="401"}[5m]))
+          /
+          sum(rate(django_http_responses_total_by_status_total[5m])) > 0.4
+        for: 2m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "La mayoria de las respuestas son 401"
+          detalle: >-
+            Mas del 40% de las respuestas de los ultimos 5 minutos son 401. Sintoma
+            tipico: un cliente (la UI) con un token que no corresponde a esta base.
+            El healthcheck seguira en verde: por eso existe esta alerta.
+
+      - alert: Ratio5xxAlto
+        expr: >-
+          sum(rate(django_http_responses_total_by_status_total{status=~"5.."}[5m]))
+          /
+          sum(rate(django_http_responses_total_by_status_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "Tasa de 5xx por encima del 5%"
+          detalle: >-
+            La aplicacion esta fallando en mas del 5% de las peticiones. A diferencia
+            de los 4xx, aqui la culpa es del servidor: revisar los logs (formato JSON,
+            filtrar por level=ERROR y logger=django.request).
+
+      # --- Degradacion ----------------------------------------------------------
+      - alert: LatenciaAlta
+        # p95 por encima de 2 s durante 5 minutos. Los endpoints que exportan Excel/PDF
+        # son legitimamente lentos, de ahi que el umbral no sea agresivo.
+        expr: >-
+          histogram_quantile(
+            0.95,
+            sum(rate(django_http_requests_latency_seconds_by_view_method_bucket[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severidad: aviso
+        annotations:
+          resumen: "p95 de latencia por encima de 2 s"
+          detalle: "La aplicacion responde, pero lenta. Suele preceder a los timeouts."
