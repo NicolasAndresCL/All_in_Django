@@ -98,10 +98,33 @@ pipeline {
                     set -e
                     nombre=$(cat .nombre-dump)
 
-                    # Censo de la base REAL (solo lectura).
-                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_DB" -At -F'|' -c "
-                        SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY relname;
-                    " > censo_original.txt
+                    # Censo de la base REAL (solo lectura). COUNT(*) de verdad, no
+                    # n_live_tup: esa columna son ESTIMACIONES del planificador, se
+                    # actualizan con ANALYZE/autovacuum y pueden ir meses por detras. El
+                    # primer intento de este job uso n_live_tup y fallo dando por malo un
+                    # respaldo correcto: la base real reportaba 9 clases y 3 tareas cuando
+                    # tenia 144 y 582. Un falso negativo aqui es tan inutil como no tener
+                    # la comprobacion.
+                    #
+                    # query_to_xml permite hacer el COUNT(*) de cada tabla desde una sola
+                    # consulta, sin generar SQL a mano ni conocer los nombres de antemano.
+                    #
+                    # Las cadenas SQL van con dollar-quoting ($$...$$) y no con comillas
+                    # simples: la variable del shell ya usa comillas simples, y en SQL las
+                    # comillas DOBLES delimitan identificadores, no texto.
+                    censo='
+                        SELECT relname,
+                               (xpath(
+                                   $$/row/c/text()$$,
+                                   query_to_xml(
+                                       format($$SELECT count(*) AS c FROM %I.%I$$, schemaname, relname),
+                                       false, true, $$$$
+                                   )
+                               ))[1]::text::bigint AS filas
+                        FROM pg_stat_user_tables
+                        ORDER BY relname;
+                    '
+                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_DB" -At -F"|" -c "$censo" > censo_original.txt
                     echo "Tablas en la base real: $(wc -l < censo_original.txt)"
 
                     # Base desechable. Se borra primero por si un build anterior murio a medias.
@@ -113,12 +136,9 @@ pipeline {
                     docker exec "$DB_CTR" pg_restore -U "$PG_USER" -d "$PG_VERIF" --no-owner /tmp/verificar.dump
                     docker exec "$DB_CTR" rm -f /tmp/verificar.dump
 
-                    # ANALYZE: n_live_tup son estimaciones del planificador y en una base
-                    # recien restaurada estan a cero hasta que se recogen estadisticas.
-                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_VERIF" -c "ANALYZE;" > /dev/null
-                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_VERIF" -At -F'|' -c "
-                        SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY relname;
-                    " > censo_restaurado.txt
+                    # El MISMO censo sobre la restaurada. Al contar filas de verdad no
+                    # hace falta ANALYZE previo.
+                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_VERIF" -At -F"|" -c "$censo" > censo_restaurado.txt
 
                     echo "--- censo original vs restaurado ---"
                     if diff -u censo_original.txt censo_restaurado.txt; then
