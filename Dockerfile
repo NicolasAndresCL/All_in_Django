@@ -15,7 +15,8 @@ RUN pip install --prefix=/install -r requirements.txt
 FROM python:3.14-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    DJANGO_SETTINGS_MODULE=config.settings
+    DJANGO_SETTINGS_MODULE=config.settings \
+    PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus
 WORKDIR /app
 
 # Dependencias instaladas en el stage builder.
@@ -29,9 +30,13 @@ RUN chmod +x /app/docker/entrypoint.sh
 # así que se usa una clave throwaway solo para este paso (no queda en la imagen final).
 RUN SECRET_KEY=build-only DEBUG=True python manage.py collectstatic --noinput
 
-# Usuario no-root.
-RUN useradd --create-home --uid 1000 app \
-    && chown -R app:app /app
+# Usuario no-root. El directorio de metricas multiproceso se crea aqui para que
+# pertenezca a 'app': el entrypoint lo vacia en cada arranque y no podria hacerlo si
+# fuese de root. Va en /tmp, efimero por naturaleza — son datos de un solo ciclo de
+# vida del contenedor, no estado que deba sobrevivir.
+RUN mkdir -p /tmp/prometheus \
+    && useradd --create-home --uid 1000 app \
+    && chown -R app:app /app /tmp/prometheus
 USER app
 
 EXPOSE 8000

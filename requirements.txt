@@ -1,5 +1,6 @@
 django>=5.2
 djangorestframework>=3.15
+drf-spectacular>=0.28       # esquema OpenAPI 3 desde el codigo (contrato de la API)
 pydantic-settings>=2.0
 pandas>=2.0
 openpyxl>=3.1
@@ -12,3 +13,5 @@ dj-database-url>=2.1        # parsea DATABASE_URL (SQLite por defecto, Postgres 
 psycopg[binary]>=3.1        # driver PostgreSQL (binary: sin compilar en Windows)
 gunicorn>=23.0             # servidor WSGI de producción (Linux/contenedores)
 whitenoise>=6.7            # sirve estáticos (admin/DRF) sin nginx
+django-prometheus>=2.3     # metricas de peticiones/BD/cache en /metrics
+python-json-logger>=3.1    # logs en JSON (una linea por evento) en contenedores
