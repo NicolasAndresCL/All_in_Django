@@ -73,6 +73,40 @@ def test_token_endpoint_tiene_rate_limit(usuario, settings):
     assert r.status_code == 429
 
 
+def test_cache_no_es_por_proceso(settings):
+    """El throttling solo frena de verdad si los contadores son compartidos.
+
+    Sin un CACHES explicito Django cae en LocMemCache, que vive EN EL PROCESO: con N
+    workers de gunicorn el limite efectivo es N x el configurado y nadie lo nota,
+    porque el 429 SI acaba llegando. Este test afirma el backend para que revertir el
+    CACHES rompa la suite en vez de degradar el rate limiting en silencio.
+    """
+    backend = settings.CACHES["default"]["BACKEND"]
+    assert backend.endswith("db.DatabaseCache"), backend
+    assert "locmem" not in backend
+
+
+@pytest.mark.django_db
+def test_los_contadores_de_throttle_llegan_a_la_base(usuario):
+    """Comprobado en los dos sentidos: vacio tras limpiar, con filas tras consumir.
+
+    Que la tabla reciba escrituras es la prueba de que el estado SALIO del proceso;
+    con LocMemCache la tabla se quedaria vacia y el test fallaria.
+    """
+    from django.db import connection
+
+    def filas_en_cache():
+        with connection.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM django_cache")
+            return cur.fetchone()[0]
+
+    cache.clear()
+    assert filas_en_cache() == 0
+
+    APIClient().post("/api/token/", {"username": "tester", "password": "nop"}, format="json")
+    assert filas_en_cache() > 0
+
+
 def test_throttle_rates_configurados(settings):
     rates = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
     assert set(rates) == {"anon", "user", "token"}

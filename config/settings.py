@@ -104,6 +104,28 @@ else:
         }
     }
 
+# ─── Cache ──────────────────────────────────────────────────────────────────
+# El cache NO es aqui una optimizacion: es donde DRF guarda los contadores de rate
+# limiting (AnonRateThrottle/UserRateThrottle y el scope "token" del login). Sin un
+# CACHES explicito Django usa LocMemCache, que vive EN EL PROCESO: con los 3 workers
+# de gunicorn del contenedor cada uno lleva su propia cuenta y el limite efectivo es
+# ~3x el configurado. Medido: con THROTTLE_TOKEN=10/min el 429 llegaba al intento 15.
+#
+# Es el MISMO patron que las metricas de Prometheus (estado por proceso en un servidor
+# multiproceso) y se resuelve igual: sacando el estado del proceso. Aqui se usa la base
+# que ya existe —DatabaseCache— en vez de anadir Redis: el volumen de escrituras del
+# throttling es despreciable y evita un servicio mas que mantener, respaldar y vigilar.
+#
+# La tabla la crea la migracion apps/extras/0001_cache_table (y, como red idempotente,
+# `createcachetable` en docker/entrypoint.sh): asi existe en dev, en tests y en el
+# contenedor sin depender de que alguien recuerde ejecutar el comando.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+    }
+}
+
 # ─── DRF ────────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     # Toda la API exige autenticación: token (clientes como la UI NiceGUI, header

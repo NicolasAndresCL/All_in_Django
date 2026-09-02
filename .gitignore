@@ -68,6 +68,10 @@ memory.md
 # Registro de trabajo pendiente (uso local)
 pendientes.md
 
+# Estado del roadmap de la ronda actual (uso local; se disuelve en
+# pendientes.md al terminar la ronda). Hermano de los otros tres, mismo trato.
+pendientes_roadmap.md
+
 # Aprendizaje tecnico por tecnologia (uso local)
 aprendizaje.md
 

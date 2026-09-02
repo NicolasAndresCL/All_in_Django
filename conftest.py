@@ -31,8 +31,9 @@ def api(usuario):
     """APIClient autenticado para probar la API (equivale a llamar con token válido).
 
     Limpia el cache antes de cada test: los contadores de throttling de DRF viven en
-    el cache (locmem) y PERSISTEN entre tests aunque la BD se revierta; sin limpieza,
-    una suite larga acumularía peticiones y acabaría en 429.
+    el cache (DatabaseCache desde 2026-09-03) y PERSISTEN entre tests aunque la BD se
+    revierta —la tabla django_cache la crea una migración, no una fixture—; sin
+    limpieza, una suite larga acumularía peticiones y acabaría en 429.
     """
     from django.core.cache import cache
     from rest_framework.test import APIClient

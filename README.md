@@ -332,6 +332,8 @@ El token se obtiene en `/api/token/` (POST `{username, password}`), se crea con
 `python manage.py drf_create_token <usuario>` o desde el admin (**Auth Token**).
 Quedan públicos solo `/` (panel web) y `/healthz/` (readiness). Hay **rate limiting**:
 60/min anónimos, 300/min autenticados y 10/min para `/api/token/` (configurables por env).
+Los contadores viven en el **cache compartido** (`DatabaseCache`), así que el límite es el
+mismo con uno o con N workers de gunicorn.
 
 Las listas **paginan** (`PageNumberPagination`, `PAGE_SIZE=50`): la respuesta trae
 `count`/`next`/`previous`/`results`. Un cliente que quiera todos los registros debe seguir
@@ -601,7 +603,12 @@ Endurecimiento aplicado:
 - **Autenticación por token** en toda la API (`IsAuthenticated` + `TokenAuthentication`);
   solo `/` y `/healthz/` son públicos. Login por token en `/api/token/`.
 - **Rate limiting** (DRF): 60/min anónimos · 300/min autenticados · 10/min en `/api/token/`
-  (frena fuerza bruta). Configurable vía `THROTTLE_*`.
+  (frena fuerza bruta). Configurable vía `THROTTLE_*`. Los contadores se guardan en el
+  **cache**, y el cache es `DatabaseCache` (tabla `django_cache`, creada por migración) **a
+  propósito**: el `LocMemCache` que Django usa por defecto es por proceso, así que con los 3
+  workers del contenedor el límite efectivo era ~3× el configurado (el 429 llegaba al intento
+  15 en vez de al 11) sin que nada diera error. Comprobado por HTTP en la carpeta 99 de la
+  colección Postman, que ahora **exige** el 429 en el intento 11.
 - **`SECURE_HTTPS=True`** (solo detrás de TLS real) activa: `SECURE_SSL_REDIRECT` (con
   `/healthz/` exento para los healthchecks), HSTS (1 año, subdominios, preload) y cookies
   `Secure` de sesión/CSRF. Con esto `manage.py check --deploy` queda **sin warnings**.
@@ -664,7 +671,9 @@ acción `importar` con los servicios mockeados, sin BD ni archivos) + cliente de
 **smoke de las 6 páginas NiceGUI** con **`nicegui.testing.User`** (mock HTTP vía `responses`,
 incl. casos 401/API caída) y las figuras Plotly (`charts.py`/`gantt.py`, funciones puras).
 Los tests de API usan la fixture **`api`** (conftest raíz): `APIClient` autenticado que además
-limpia el cache de throttling entre tests. Los de UI son `async` (`asyncio_mode=auto`).
+limpia el cache de throttling entre tests. `test_seguridad.py` afirma también que el backend de
+cache **no** es el de por proceso y que los contadores llegan de verdad a la tabla. Los de UI
+son `async` (`asyncio_mode=auto`).
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
 Deps de test en `requirements-dev.txt` (`pytest`, `pytest-asyncio`, `pytest-django`,

@@ -3747,7 +3747,7 @@
                 ""
               ]
             },
-            "description": "Se repite a si misma hasta recibir 429.\n\n**Por que el tope es 40 y no 11**: `THROTTLE_TOKEN` es 10/min, pero los contadores de DRF viven en el cache de Django y el proyecto no define `CACHES`, asi que usa `LocMemCache`, que es **por proceso**. Con los 3 workers de gunicorn del contenedor, cada uno lleva su propia cuenta y el limite efectivo es ~3x el configurado. Esta prueba afirma que el freno EXISTE; el numero exacto no es de fiar mientras el cache no sea compartido (ver pendientes.md).",
+            "description": "Se repite a si misma hasta recibir 429.\n\n**Por que el tope es 11**: `THROTTLE_TOKEN` es 10/min, asi que la peticion 11 debe rebotar. Antes el tope era 40 porque el proyecto no definia `CACHES` y Django caia en `LocMemCache`, que vive **por proceso**: con los 3 workers de gunicorn cada uno llevaba su propia cuenta y el 429 llegaba al intento 15. Desde que el cache es `DatabaseCache` (compartido entre workers) el limite real coincide con el configurado, y esta prueba lo AFIRMA en vez de conformarse con que el freno exista.\n\nEl tope es `at.most(11)` y no `equal(11)` a proposito: otras carpetas de la coleccion piden token antes, y cada una de esas peticiones solo puede ADELANTAR el 429, nunca retrasarlo.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
@@ -3767,7 +3767,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const TOPE = 40;  // 10/min x 3 workers, con margen",
+                  "const TOPE = 11;  // THROTTLE_TOKEN=10/min + 1: con el cache compartido el limite es el real",
                   "const n = Number(pm.collectionVariables.get('intentos_token') || 0) + 1;",
                   "pm.collectionVariables.set('intentos_token', n);",
                   "",
@@ -3783,7 +3783,7 @@
                   "    postman.setNextRequest(null);",
                   "} else if (n >= TOPE) {",
                   "    pm.test('FALLO: ' + TOPE + ' intentos sin 429', function () {",
-                  "        pm.expect.fail('THROTTLE_TOKEN no esta frenando /api/token/');",
+                  "        pm.expect.fail('el 429 no llego en 11 intentos: el cache del throttling no es compartido');",
                   "    });",
                   "    pm.collectionVariables.unset('intentos_token');",
                   "    postman.setNextRequest(null);",

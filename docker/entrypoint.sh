@@ -19,6 +19,13 @@ fi
 echo "[entrypoint] Aplicando migraciones..."
 python manage.py migrate --noinput
 
+# Tabla del cache de base de datos (DatabaseCache). La migracion 0001_cache_table de
+# apps/extras ya la crea, pero el comando es idempotente y cubre el caso de desplegar
+# contra una base preexistente cuyo historial de migraciones no la incluya. El cache es
+# donde viven los contadores de throttling: si la tabla falta, el rate limiting revienta.
+echo "[entrypoint] Asegurando la tabla del cache..."
+python manage.py createcachetable
+
 echo "[entrypoint] Iniciando gunicorn en 0.0.0.0:8000..."
 # La config vive en un archivo (docker/gunicorn.conf.py) y no en banderas: el hook
 # child_exit que las metricas necesitan no se puede expresar en la linea de comandos.
