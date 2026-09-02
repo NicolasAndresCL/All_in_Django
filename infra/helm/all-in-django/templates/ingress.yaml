@@ -5,13 +5,29 @@ metadata:
   name: {{ include "aid.fullname" . }}
   labels:
     {{- include "aid.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- if or .Values.ingress.annotations .Values.ingress.tls.enabled }}
   annotations:
+    {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.ingress.tls.enabled }}
+    # cert-manager ve esta anotacion, crea el Certificate y rellena el secretName de
+    # `tls:` con el certificado emitido. Es un atajo para no escribir group ni kind: como
+    # los ClusterIssuer NO tienen namespace, el Ingress puede vivir en cualquiera.
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer | quote }}
+    {{- end }}
   {{- end }}
 spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      # cert-manager CREA este Secret; no hay que precrearlo ni versionarlo. Por eso el
+      # certificado TLS queda fuera de SOPS: se emite y se renueva solo.
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" (include "aid.fullname" .)) }}
   {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}

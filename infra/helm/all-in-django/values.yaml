@@ -53,10 +53,27 @@ observabilidad:
   logFormato: json
   logLevel: INFO
 
-# Postgres embebido (StatefulSet). En producción, considera una base gestionada
-# (postgres.enabled=false) e inyecta secret.databaseUrl.
+# Postgres embebido (StatefulSet). DESACTIVADO por defecto: el destino de este chart es
+# AWS, donde el RDS ya lo provisiona Terraform (infra/terraform), y una base de datos en un
+# StatefulSet es de las cosas que peor envejecen en un cluster — respaldos, failover y
+# actualizaciones de version mayor pasan a ser tuyos.
+#
+# El puente entre los dos: el output `database_url` de Terraform (marcado sensitive) va al
+# archivo cifrado del chart, no a un --set:
+#
+#   terraform -chdir=infra/terraform output -raw database_url
+#   sops infra/helm/secretos/secretos.enc.yaml     # pegarlo en secret.databaseUrl
+#
+# CONTRAPARTIDA ASUMIDA: con esto los valores de fabrica ya NO despliegan solos — `helm
+# install` aborta pidiendo `secret.databaseUrl`. Es una excepcion DELIBERADA a la regla de
+# que los defaults funcionen (la que se aprendio con `image.tag: latest`), y se sostiene
+# porque la diferencia es el tipo de fallo: aquel daba un ImagePullBackOff mudo, este aborta
+# en el render diciendo exactamente que falta. Preferimos que obligue a decidir donde vive la
+# base antes que crear en silencio un StatefulSet que en produccion seria un error.
+# Para probar en local (kind/minikube), levanta la base embebida a proposito:
+#   helm install ... --set postgres.enabled=true
 postgres:
-  enabled: true
+  enabled: false
   # postgres:18 movio PGDATA a /var/lib/postgresql/18/docker y su VOLUME a
   # /var/lib/postgresql; el StatefulSet monta el PVC ahi (ver templates/postgres.yaml).
   image: postgres:18-alpine
@@ -70,3 +87,21 @@ ingress:
   className: ""
   host: all-in-django.local
   annotations: {}
+  # HTTPS con cert-manager. Requiere cert-manager instalado en el cluster y un dominio
+  # real apuntando al Ingress: `all-in-django.local` no vale para emitir nada.
+  tls:
+    enabled: false
+    # Emisor por defecto: STAGING. Produccion limita a 5 certificados por dominio y
+    # semana, y unos pocos intentos con el DNS mal apuntado agotan la cuota durante dias.
+    # Cuando staging emita bien, cambiar el par (clusterIssuer, acmeServer) a produccion:
+    #   https://acme-v02.api.letsencrypt.org/directory
+    clusterIssuer: letsencrypt-staging
+    acmeServer: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Correo de la cuenta ACME (avisos de caducidad). Obligatorio si crearClusterIssuer.
+    email: ""
+    # false si el cluster ya tiene su ClusterIssuer: es un recurso CLUSTER-scoped y no
+    # debe haber dos con el mismo nombre peleandose.
+    crearClusterIssuer: true
+    # Secret donde cert-manager deja el certificado. Vacio -> "<release>-tls". NO se
+    # precrea ni se versiona: lo crea y lo renueva cert-manager.
+    secretName: ""

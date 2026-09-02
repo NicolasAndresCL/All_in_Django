@@ -1,0 +1,42 @@
+{{- if and .Values.ingress.enabled .Values.ingress.tls.enabled .Values.ingress.tls.crearClusterIssuer }}
+{{- /*
+El guard lleva las TRES condiciones, no solo `crearClusterIssuer`. Con solo esa, un
+`helm install` con el Ingress desactivado (el default) intentaba crear igualmente el
+ClusterIssuer y abortaba pidiendo `ingress.tls.email` — un recurso que nadie habia
+pedido bloqueando una instalacion que no queria TLS. Lo destapo `helm lint`.
+*/}}
+# ClusterIssuer de Let's Encrypt.
+#
+# EMPEZAR SIEMPRE POR STAGING (es el default de values.yaml). Produccion tiene un limite
+# de 5 certificados por dominio y semana: unos cuantos intentos con el DNS mal apuntado o
+# el Ingress sin exponer agotan la cuota y dejan el dominio sin poder emitir durante dias.
+# Staging no lo tiene y emite certificados de una CA no confiable — el navegador avisa, que
+# es exactamente lo que se quiere mientras se comprueba que el mecanismo funciona.
+#
+# El recurso es CLUSTER-scoped: no lleva namespace y solo debe existir uno por nombre. Si
+# el cluster ya tiene uno (o cert-manager lo gestiona otro equipo), deja
+# `crearClusterIssuer: false` y apunta `clusterIssuer` al que ya existe.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.ingress.tls.clusterIssuer }}
+  labels:
+    {{- include "aid.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: {{ .Values.ingress.tls.acmeServer | quote }}
+    # Let's Encrypt manda aqui los avisos de caducidad. Sin correo valido no se emite.
+    email: {{ required "ingress.tls.email es obligatorio para emitir certificados ACME" .Values.ingress.tls.email | quote }}
+    privateKeySecretRef:
+      # La identidad de la cuenta ACME. cert-manager lo rellena solo; perderlo no impide
+      # emitir de nuevo, pero si revocar lo emitido con la cuenta anterior.
+      name: {{ .Values.ingress.tls.clusterIssuer }}-account-key
+    solvers:
+      # HTTP-01: Let's Encrypt pide un fichero por HTTP en el propio dominio, asi que el
+      # Ingress tiene que ser alcanzable desde INTERNET en el puerto 80. Si el cluster es
+      # privado o el DNS no apunta aqui, el challenge nunca se resuelve y el Certificate se
+      # queda en Pending para siempre, sin error visible en el Ingress.
+      - http01:
+          ingress:
+            ingressClassName: {{ .Values.ingress.className | default "nginx" }}
+{{- end }}
