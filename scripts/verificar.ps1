@@ -10,8 +10,8 @@
     (DEBUG=False + SECURE_HTTPS=True), asi que no aparece jamas en un pytest normal.
 
 .PARAMETER Rapido
-    Salta los dos pasos lentos con Docker (arranque del stack y pruebas HTTP de la API).
-    Util mientras se itera.
+    Salta los pasos lentos: los dos con Docker (arranque del stack y pruebas HTTP de la
+    API) y la verificacion visual en navegador. Util mientras se itera.
 
 .EXAMPLE
     .\scripts\verificar.ps1
@@ -108,6 +108,19 @@ if (-not $Rapido) {
     }
 } else {
     Write-Host "  --  API por HTTP (saltado por -Rapido)" -ForegroundColor DarkGray
+}
+
+# 6) verificacion VISUAL en navegador real (marca `visual`, excluida del pytest normal y
+#    del CI). Mide computed style y contraste: es lo unico que comprueba que el CSS GANA la
+#    cascada, no solo que esta escrito. Vigila las tres regresiones documentadas (cubierta
+#    borrada por el shorthand de bg-black, rebote que se pausa en vez de apagarse y el
+#    bloque prefers-reduced-motion). Necesita `playwright install chromium` una vez.
+if (-not $Rapido) {
+    Ejecutar 'visual (contraste y estilos en Chromium)' {
+        & $py -m pytest -m visual -q -rs
+    }
+} else {
+    Write-Host "  --  visual (saltado por -Rapido)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

@@ -93,7 +93,10 @@ def selector_tema(titulo: str) -> None:
 
 def _opcion(clave: str, tema: t.Tema, marcado: bool) -> None:
     clases = "aid-tema-opcion items-center gap-0.5 w-20 px-1 pt-1.5 pb-1 rounded-lg"
+    # El click va en la COLUMNA, no en la imagen ni en la etiqueta: .mark() da a los tests
+    # (y a cualquier automatización) un asidero sobre el elemento que de verdad escucha.
     with ui.column().classes(clases + (" aid-tema-elegido" if marcado else "")) \
+            .mark(f"tema-{clave}") \
             .on("click", lambda: _elegir(clave)):
         ui.image(f"{t.FONDOS_URL}/mini/{tema.archivo}").classes("w-12 h-14")
         ui.label(tema.etiqueta).classes("text-[10px] leading-tight text-center truncate w-full")

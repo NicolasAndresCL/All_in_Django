@@ -214,7 +214,9 @@ def _tab_turnos(api, refrescos: dict) -> None:
         for d in DIAS:
             with ui.column().classes("items-stretch gap-1"):
                 ui.label(d[:3]).classes("font-bold text-center")
-                chk = ui.checkbox("Libre", value=False)
+                # .mark() para que los tests puedan distinguir los 7 checkboxes, que
+                # comparten etiqueta ("Libre") y no tienen otro rasgo por el que filtrar.
+                chk = ui.checkbox("Libre", value=False).mark(f"libre-{d}")
                 ent = ui.input(value="18:00").props("type=time")
                 sal = ui.input(value="23:00").props("type=time")
                 ent.bind_enabled_from(chk, "value", backward=lambda v: not v)

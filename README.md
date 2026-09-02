@@ -679,11 +679,31 @@ validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitari
 acción `importar` con los servicios mockeados, sin BD ni archivos) + cliente de la UI (api_client
 —incl. que sigue **todas** las páginas de la API y envía el header `Authorization: Token`—) +
 **smoke de las 6 páginas NiceGUI** con **`nicegui.testing.User`** (mock HTTP vía `responses`,
-incl. casos 401/API caída) y las figuras Plotly (`charts.py`/`gantt.py`, funciones puras).
+incl. casos 401/API caída) + **interacción de la UI** (`test_interaccion.py`: se pulsa el
+widget —crear clase, copiar semana, guardar la grilla de 7 días, marcar un día libre, filtrar
+tareas, cambiar de tema— y se afirma la petición que sale hacia la API, con su método, ruta y
+cuerpo; un `on_click` roto pasa los tests de humo sin despeinarse) y las figuras Plotly
+(`charts.py`/`gantt.py`, funciones puras).
 Los tests de API usan la fixture **`api`** (conftest raíz): `APIClient` autenticado que además
 limpia el cache de throttling entre tests. `test_seguridad.py` afirma también que el backend de
 cache **no** es el de por proceso y que los contadores llegan de verdad a la tabla. Los de UI
 son `async` (`asyncio_mode=auto`).
+
+### Verificación visual (marca `visual`, fuera del CI)
+
+`nicegui_ui/tests/test_visual.py` levanta la UI de verdad junto a una API falsa y la abre en
+**Chromium con Playwright** para **medir**: que la cubierta llega a pintarse
+(`background-image` del body), que el header no acaba con el color primario, el **contraste
+WCAG** del texto sobre las tarjetas (≥ 4,5:1) y que el rebote se **apaga** en hover y con
+`prefers-reduced-motion`. Es lo único que comprueba que el CSS *gana la cascada*: `test_tema.py`
+mira la hoja como texto, y un `!important` escrito no prueba que se aplique.
+
+Queda fuera del `pytest` normal y del CI porque exige descargar el navegador (~150 MB):
+
+```powershell
+python -m playwright install chromium   # una vez
+pytest -m visual                        # también lo corre scriptserificar.ps1
+```
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
 Deps de test en `requirements-dev.txt` (`pytest`, `pytest-asyncio`, `pytest-django`,

@@ -10,4 +10,8 @@ pytest-cov>=5.0          # integra coverage.py con pytest (pytest --cov)
 coverage>=7.0            # coverage.py (motor de cobertura; usable también standalone)
 responses>=0.25          # mock de HTTP para los tests de la UI
 ruff>=0.16               # linter del job `lint` del CI (config en pyproject.toml)
+# Verificacion visual en navegador real (marca `visual`, excluida por defecto en
+# pytest.ini y fuera del CI). Mide computed style y contraste; requiere descargar el
+# navegador una vez:  python -m playwright install chromium
+playwright>=1.48
 # unittest.mock es de la stdlib (no requiere instalación).
