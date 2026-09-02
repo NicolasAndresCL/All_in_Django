@@ -64,6 +64,9 @@ memory.md
 # Registro de trabajo pendiente (uso local)
 pendientes.md
 
+# Aprendizaje tecnico por tecnologia (uso local)
+aprendizaje.md
+
 # Config local de Claude Code (personal, no versionar)
 .claude/settings.local.json
 
