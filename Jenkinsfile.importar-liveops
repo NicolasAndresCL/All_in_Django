@@ -1,0 +1,198 @@
+// Importacion PERIODICA de los turnos de LiveOps desde el Excel/CSV fuente.
+//
+// POR QUE EXISTE
+// La accion `POST /api/turnos-equipo/importar/` existe desde hace meses y siempre se ha
+// disparado a mano, desde la UI. Un paso que depende de que alguien se acuerde no es un
+// paso obligatorio: es un recordatorio, y los recordatorios fallan justo la semana que
+// hay mas turnos que cargar. Esto lo dispara solo.
+//
+// COMO LO HACE
+// Habla con la API por HTTP, con token — no toca el ORM ni la base. Es deliberado: la
+// importacion ya esta implementada, probada y documentada en el endpoint; duplicarla en
+// un script seria mantener dos versiones de la misma logica y que una envejeciera.
+//
+// QUE NO HACE
+// No adivina de donde sale el archivo. `ORIGEN` es un parametro (ruta dentro del
+// contenedor de Jenkins o URL http). Si el archivo no esta, el job FALLA: importar cero
+// filas en silencio y salir en verde es el falso positivo que este proyecto ya ha pagado
+// varias veces.
+
+pipeline {
+    agent any
+
+    triggers {
+        // Lunes a las 6 de la manana: los turnos de la semana se publican el fin de
+        // semana, asi que estan cargados antes de que empiece la jornada. 'H' reparte el
+        // minuto para no clavar todos los jobs de Jenkins a la vez.
+        cron('H 6 * * 1')
+    }
+
+    parameters {
+        string(name: 'ORIGEN', defaultValue: '/var/jenkins_home/liveops/turnos.csv',
+               description: 'Archivo a importar: ruta DENTRO del contenedor de Jenkins, o URL http(s).')
+        string(name: 'API_BASE', defaultValue: 'http://all_in_django:8000/api',
+               description: 'Base de la API. Por nombre de contenedor: Jenkins comparte el daemon Docker.')
+        string(name: 'REINTENTOS', defaultValue: '3',
+               description: 'Intentos como maximo. Un 5xx pasajero no debe perder la importacion de la semana.')
+        string(name: 'ESPERA', defaultValue: '20',
+               description: 'Segundos entre intentos.')
+    }
+
+    environment {
+        // Mismo Secret file que usa el CD: dentro esta API_TOKEN, que es lo unico que
+        // hace falta aqui. Asi hay UNA credencial que rotar, no dos.
+        ENV_DOCKER = credentials('all-in-django-env')
+        TRABAJO    = 'importacion'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+    }
+
+    stages {
+        stage('Preparar el archivo') {
+            steps {
+                sh '''
+                    set -e
+                    mkdir -p "$TRABAJO"
+                    destino="$TRABAJO/entrada"
+
+                    case "$ORIGEN" in
+                        http://*|https://*)
+                            echo "Descargando $ORIGEN"
+                            # --fail: sin el, curl guarda el cuerpo de un 404 y el job
+                            # seguiria adelante importando una pagina de error.
+                            curl --fail --silent --show-error --location -o "$destino" "$ORIGEN"
+                            ;;
+                        *)
+                            if [ ! -f "$ORIGEN" ]; then
+                                echo "No existe el archivo de origen: $ORIGEN"
+                                echo "Sin archivo no hay importacion: esto es un fallo, no un 'no habia nada que hacer'."
+                                exit 1
+                            fi
+                            cp "$ORIGEN" "$destino"
+                            ;;
+                    esac
+
+                    if [ ! -s "$destino" ]; then
+                        echo "El archivo de origen esta VACIO."
+                        exit 1
+                    fi
+                    echo "Origen listo: $(wc -c < "$destino") bytes"
+                '''
+            }
+        }
+
+        stage('Importar contra la API') {
+            steps {
+                // El token no se imprime: se lee del Secret file y se pasa por variable.
+                sh '''
+                    set -e
+                    . "$ENV_DOCKER"
+                    if [ -z "${API_TOKEN:-}" ]; then
+                        echo "La credencial no trae API_TOKEN."
+                        exit 1
+                    fi
+
+                    intento=1
+                    while [ "$intento" -le "$REINTENTOS" ]; do
+                        echo "--- Intento $intento de $REINTENTOS"
+                        # El codigo HTTP va aparte del cuerpo: con `curl --fail` se pierde
+                        # el JSON del error, que es justo donde la API explica que fila
+                        # esta mal. Aqui se quiere el cuerpo SIEMPRE.
+                        codigo=$(curl --silent --show-error \\
+                            --output "$TRABAJO/respuesta.json" --write-out '%{http_code}' \\
+                            -X POST "$API_BASE/turnos-equipo/importar/" \\
+                            -H "Authorization: Token $API_TOKEN" \\
+                            -F "archivo=@$TRABAJO/entrada" || echo 000)
+
+                        echo "HTTP $codigo"
+                        cat "$TRABAJO/respuesta.json" 2>/dev/null || true
+                        echo ""
+
+                        case "$codigo" in
+                            201|200)
+                                break
+                                ;;
+                            400|401|403|422)
+                                # Reintentar no arregla un archivo mal formado ni un token
+                                # invalido: solo gasta la ventana y repite el mismo error.
+                                echo "Error NO reintentable (HTTP $codigo)."
+                                exit 1
+                                ;;
+                            *)
+                                if [ "$intento" -eq "$REINTENTOS" ]; then
+                                    echo "Agotados los $REINTENTOS intentos con HTTP $codigo."
+                                    exit 1
+                                fi
+                                echo "Fallo transitorio; reintento en ${ESPERA}s."
+                                sleep "$ESPERA"
+                                ;;
+                        esac
+                        intento=$((intento + 1))
+                    done
+                '''
+            }
+        }
+
+        stage('Comprobar el resultado') {
+            steps {
+                // Un 201 no significa que se haya importado algo, y esto NO es una
+                // suposicion: se comprobo contra la API real. Con las columnas mal, la
+                // API valida antes y responde 400 con un mensaje claro
+                // ({"error": "El archivo no tiene columna 'Fecha'."}). Pero un archivo con
+                // las CABECERAS CORRECTAS y ninguna fila devuelve
+                // {"importadas": 0, "filas": 0, "errores": []} con HTTP 201 — verde, sin
+                // errores y sin haber importado nada. Ese es el caso que este stage caza, y
+                // es justo el que produciria un Excel exportado antes de tiempo o vaciado
+                // por error. El resumen se LEE, no se asume.
+                sh '''
+                    set -e
+                    resumen="$TRABAJO/respuesta.json"
+                    python3 - "$resumen" <<'PY'
+import json, sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    datos = json.load(f)
+
+importadas = datos.get("importadas", 0)
+errores = datos.get("errores") or []
+print(f"Importadas: {importadas}")
+for clave, valor in datos.items():
+    if clave not in ("importadas", "errores"):
+        print(f"  {clave}: {valor}")
+for e in errores:
+    print(f"  ERROR: {e}")
+
+if importadas == 0:
+    print("Cero filas importadas: el archivo no tenia turnos utiles o sus columnas no se reconocen.")
+    sys.exit(1)
+if errores:
+    print(f"{len(errores)} filas rechazadas de la importacion.")
+    sys.exit(1)
+print("Importacion correcta.")
+PY
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            archiveArtifacts artifacts: 'importacion/respuesta.json', fingerprint: true
+            echo 'Importacion de LiveOps OK.'
+        }
+        failure {
+            echo 'La importacion de LiveOps FALLO. Revisa el log: el cuerpo de la respuesta esta arriba.'
+        }
+        // Toda la limpieza en `cleanup`: en un pipeline declarativo el orden es
+        // always -> success/failure -> cleanup, y limpiar antes borraria el
+        // respuesta.json ANTES de que `success` lo archive. Ya paso con el CD.
+        cleanup {
+            sh 'rm -rf "$TRABAJO" || true'
+        }
+    }
+}
