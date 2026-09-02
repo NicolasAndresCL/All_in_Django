@@ -25,6 +25,14 @@ spec:
             # Único acoplamiento UI↔API: la URL del Service de la API.
             - name: API_BASE
               value: http://{{ include "aid.fullname" . }}-api:8000/api
+            # Sin token la UI levanta "sana" y devuelve 401 en cada vista: healthchecks en
+            # verde y aplicacion inservible. El compose lo exige con ${API_TOKEN:?}; aqui
+            # lo exige el `required` de templates/secret.yaml.
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aid.fullname" . }}-secret
+                  key: API_TOKEN
           ports:
             - containerPort: 8501
           readinessProbe:

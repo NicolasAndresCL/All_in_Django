@@ -8,3 +8,9 @@ data:
   DEBUG: {{ .Values.config.DEBUG | quote }}
   ALLOWED_HOSTS: {{ .Values.config.ALLOWED_HOSTS | quote }}
   CSRF_TRUSTED_ORIGINS: {{ .Values.config.CSRF_TRUSTED_ORIGINS | quote }}
+  # Observabilidad (no sensible; el token va en el Secret).
+  LOG_FORMATO: {{ .Values.observabilidad.logFormato | quote }}
+  LOG_LEVEL: {{ .Values.observabilidad.logLevel | quote }}
+  # Sin esta variable, cada worker de gunicorn cuenta por su lado y un scrape devuelve
+  # los numeros de UNO solo. El Deployment monta un emptyDir en esta ruta.
+  PROMETHEUS_MULTIPROC_DIR: {{ .Values.observabilidad.multiprocDir | quote }}

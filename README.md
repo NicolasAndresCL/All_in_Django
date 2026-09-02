@@ -260,6 +260,14 @@ Detalles que conviene conocer antes de usarlos:
   valores de fábrica moría en `ImagePullBackOff` sin pista de por qué.
 - **Helm**: el StatefulSet de Postgres monta el PVC en `/var/lib/postgresql` y **no fija
   `PGDATA`** — mismo motivo que en Compose (ver la trampa de Postgres 18 más arriba).
+- **Helm**: el chart despliega también la **observabilidad** (`METRICS_TOKEN` y `API_TOKEN` en
+  el Secret, `LOG_FORMATO`/`PROMETHEUS_MULTIPROC_DIR` en el ConfigMap, un `emptyDir` para las
+  métricas multiproceso y anotaciones `prometheus.io/*`). Se había construido solo para
+  Compose, así que un `helm install` arrancaba con las métricas mintiendo y los logs en texto
+  plano, con los pods `Running` y las probes en verde. **Las anotaciones no llevan
+  credenciales**: como `/metrics` exige bearer, el job de Prometheus necesita además el token
+  o recibirá 401 (ver el README del chart). `test_paridad_infra.py` falla si una variable vive
+  en un solo entorno.
 - **Terraform**: el RDS lleva `skip_final_snapshot = false` con `final_snapshot_identifier`,
   `backup_retention_period` (7 días por defecto) y `deletion_protection`. Antes un `destroy`
   se llevaba la instancia **sin dejar copia**.
@@ -662,7 +670,9 @@ arranquen tres contenedores. Se activa una sola vez con `git config core.hooksPa
 impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **contrato de la
 API** (`test_contrato_api.py`: compara el esquema OpenAPI con la colección Postman y falla si
 un endpoint no tiene ni una petición que lo visite — es lo que impide que la colección
-envejezca en silencio) + **seguridad**
+envejezca en silencio) + **paridad de infraestructura** (`test_paridad_infra.py`: compara las
+variables de entorno del compose —y los `ENV` del Dockerfile— con las del chart de Helm y falla
+si una existe en un solo entorno; el mismo antídoto contra la deriva silenciosa) + **seguridad**
 (`test_seguridad.py`: 401 sin token, obtención/uso del token, rate limit del login con 429,
 validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitarios con
 `unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la

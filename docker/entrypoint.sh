@@ -10,10 +10,17 @@ set -e
 #
 # El directorio se VACIA en cada arranque: los ficheros de la ejecucion anterior se
 # sumarian a los de ahora y los contadores apareceran inflados desde el primer segundo.
+#
+# OJO: se borra el CONTENIDO, no el directorio. En Kubernetes el chart monta ahi un
+# emptyDir, y `rm -rf` sobre un punto de montaje falla con "Resource busy"; con `set -e`
+# eso es un CrashLoopBackOff en el arranque. Comprobado:
+#   docker run --rm -v v:/tmp/prometheus alpine rm -rf /tmp/prometheus
+#   -> rm: can't remove '/tmp/prometheus': Resource busy
+# `find -mindepth 1 -delete` funciona igual sea un directorio normal o un montaje.
 if [ -n "${PROMETHEUS_MULTIPROC_DIR}" ]; then
     echo "[entrypoint] Limpiando ${PROMETHEUS_MULTIPROC_DIR} para las metricas multiproceso..."
-    rm -rf "${PROMETHEUS_MULTIPROC_DIR}"
     mkdir -p "${PROMETHEUS_MULTIPROC_DIR}"
+    find "${PROMETHEUS_MULTIPROC_DIR}" -mindepth 1 -delete
 fi
 
 echo "[entrypoint] Aplicando migraciones..."

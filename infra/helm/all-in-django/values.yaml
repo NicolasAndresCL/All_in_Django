@@ -29,6 +29,29 @@ secret:
   secretKey: ""
   # DATABASE_URL: si postgres.enabled=true se calcula solo; si no, ponla aquí.
   databaseUrl: ""
+  # Token con el que la UI llama a la API. OBLIGATORIO, igual que el ${API_TOKEN:?} del
+  # compose: sin él la UI arranca "sana" y devuelve 401 en cada vista — el falso positivo
+  # que costó la sesión del 18 de agosto. Se crea tras el primer despliegue con
+  #   kubectl exec deploy/<release>-api -- python manage.py drf_create_token <usuario>
+  apiToken: ""
+  # Bearer de /metrics. VACÍO A PROPÓSITO: sin token, core/metrics.py responde 404
+  # (deshabilitado, no abierto), así que olvidarlo no publica las métricas por accidente.
+  metricsToken: ""
+
+# Observabilidad. Espeja lo que el compose y el Dockerfile ya hacen; sin esto un
+# `helm install` arrancaba sin métricas agregadas y con los logs en texto plano.
+observabilidad:
+  # Anotaciones prometheus.io/* en el pod de la API. OJO: solo MARCAN el pod como
+  # scrapeable — /metrics exige bearer, así que el job de Prometheus necesita además
+  # el token (ver README.md del chart).
+  scrapeAnnotations: true
+  # Directorio compartido por los workers de gunicorn para agregar las métricas entre
+  # procesos. Debe coincidir con PROMETHEUS_MULTIPROC_DIR del Dockerfile; el chart monta
+  # ahí un emptyDir para que sea escribible y efímero por pod.
+  multiprocDir: /tmp/prometheus
+  # json en contenedor (un agregador filtra por campo en vez de adivinar con regex).
+  logFormato: json
+  logLevel: INFO
 
 # Postgres embebido (StatefulSet). En producción, considera una base gestionada
 # (postgres.enabled=false) e inyecta secret.databaseUrl.
