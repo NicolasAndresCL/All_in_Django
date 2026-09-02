@@ -357,6 +357,7 @@ los enlaces `next` (así lo hace `nicegui_ui/api_client.py`).
 | `/api/<recurso>/exportar/?formato=excel\|pdf` | GET | export en clases/turnos/tareas |
 | `/api/schema/` | GET | esquema **OpenAPI 3** generado del código (drf-spectacular) |
 | `/api/schema/swagger-ui/` | GET | visor interactivo del esquema (pide sesión de admin) |
+| `/metrics` | GET | métricas Prometheus. **No público**: `Authorization: Bearer <METRICS_TOKEN>` |
 
 ### El contrato: esquema OpenAPI
 
@@ -410,6 +411,52 @@ locales, así que en la petición *Importar CSV* hay que volver a seleccionar
 > Si la corres contra un entorno con datos reales, usa solo las carpetas de lectura. Las de
 > escritura marcan todo lo que crean (`POSTMAN-SMOKE`, semanas de 2099) y lo borran al final,
 > pero un fallo a medio camino deja residuos.
+
+## Observabilidad
+
+Los healthchecks dicen *"el proceso responde"*, no *"la aplicación funciona"*. Este proyecto ya
+sufrió la diferencia: el stack entero en `healthy` mientras la UI devolvía **401 en cada vista**
+por un token que no correspondía a la base. Eso es lo que la observabilidad ve y un healthcheck no.
+
+**Métricas** — `/metrics` (django-prometheus), **no público**: exige
+`Authorization: Bearer <METRICS_TOKEN>`. Con la variable vacía el endpoint responde **404**
+(deshabilitado, no abierto), así que olvidarla no publica las métricas por accidente.
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # genéralo una vez
+# El mismo valor va en .env.docker (METRICS_TOKEN) y en infra/observabilidad/token
+```
+
+**Logs** — `LOG_FORMATO=json` (por defecto en contenedor) emite una línea JSON por evento, tanto
+en Django como en **gunicorn**. `LOG_FORMATO=texto` mantiene el formato legible en desarrollo.
+
+```json
+{"remoto":"172.24.0.1","metodo":"GET","ruta":"/api/","status":"401","duracion_us":"2674"}
+{"timestamp":"...","level":"WARNING","name":"django.request","message":"Unauthorized: /api/","status_code":401}
+```
+
+**Alertas** — Prometheus va en el compose bajo un *profile*, así que el stack de diario no cambia:
+
+```powershell
+docker compose --env-file .env.docker --profile observabilidad up -d
+# http://localhost:9090  ->  Status/Targets y Alerts
+```
+
+| Alerta | Se dispara cuando |
+|---|---|
+| `ApiCaida` | Prometheus lleva 1 min sin poder leer `/metrics` |
+| `Ratio401Alto` | más del 40% de las respuestas son 401 durante 2 min |
+| `Ratio5xxAlto` | más del 5% son 5xx durante 2 min |
+| `LatenciaAlta` | el p95 supera 2 s durante 5 min |
+
+El umbral de 401 es alto a propósito: la API rechaza peticiones sin token por diseño, así que lo
+anómalo no es que haya 401 sino que sean la mayoría. Comprobado provocando el fallo: con la UI
+usando un token inválido, `docker ps` seguía mostrando los cuatro contenedores `healthy` y
+`Ratio401Alto` pasó a **FIRING**; al restaurar el token volvió a `inactive`.
+
+> Con varios workers de gunicorn cada proceso lleva sus propios contadores, así que la imagen
+> define `PROMETHEUS_MULTIPROC_DIR` y el entrypoint lo vacía en cada arranque. Sin eso, `/metrics`
+> devolvería los números de **un** worker al azar.
 
 ## UI NiceGUI (opcional)
 
@@ -603,7 +650,7 @@ arranquen tres contenedores. Se activa una sola vez con `git config core.hooksPa
 > estilo global que merece su propio commit, no colarse en una refactorización de
 > infraestructura.
 
-229 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+236 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
 impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **contrato de la
 API** (`test_contrato_api.py`: compara el esquema OpenAPI con la colección Postman y falla si
 un endpoint no tiene ni una petición que lo visite — es lo que impide que la colección
