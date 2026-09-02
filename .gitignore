@@ -41,6 +41,8 @@ infra/terraform/.terraform.lock.hcl
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# Config parcial del backend s3: lleva el nombre del bucket (informacion de la cuenta).
+backend.hcl
 crash.log
 
 # Cobertura de tests

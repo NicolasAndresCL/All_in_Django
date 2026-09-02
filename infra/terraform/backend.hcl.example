@@ -1,0 +1,18 @@
+# Configuracion parcial del backend s3. Copia a `backend.hcl` (gitignored: el nombre del
+# bucket es informacion de la cuenta) y usala en el init:
+#
+#   terraform init -backend-config=backend.hcl
+#
+# El bucket NO lo crea este proyecto: es el huevo y la gallina (no puede guardar su propio
+# estado dentro de si mismo), y es un recurso de pago. Se crea una vez, a mano:
+#
+#   aws s3api create-bucket --bucket <nombre> --region us-east-1
+#   aws s3api put-bucket-versioning --bucket <nombre> #       --versioning-configuration Status=Enabled
+#   aws s3api put-public-access-block --bucket <nombre> #       --public-access-block-configuration #       BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+#   aws s3api put-bucket-encryption --bucket <nombre> --server-side-encryption-configuration #       '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+#
+# El VERSIONADO no es opcional: es lo unico que permite recuperar un estado corrupto o
+# borrado por error, y sin el un `apply` desafortunado no tiene vuelta atras.
+
+bucket = "cambia-esto-nombre-unico-del-estado"
+region = "us-east-1"
