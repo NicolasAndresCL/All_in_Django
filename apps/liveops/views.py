@@ -1,6 +1,7 @@
 """ViewSet del módulo LiveOps (CRUD + importar CSV/Excel + exportar + imprimir)."""
 
 from django.http import HttpResponse
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,6 +11,14 @@ from core.exceptions import ArchivoInvalidoError
 from core.horarios import DIAS_ORDEN
 from core.horarios_export import generar_pdf_equipo
 from core.logging import get_logger
+from core.openapi import (
+    MIME_PDF,
+    PARAM_SEMANA,
+    PARAM_TRABAJADOR,
+    RESP_PDF,
+    ErrorDominioSerializer,
+    ImportarRespuestaSerializer,
+)
 
 from .models import TurnoEquipo
 from .serializers import ImportarTurnosSerializer, TurnoEquipoSerializer
@@ -18,6 +27,16 @@ from .services import guardar_turnos, leer_tabla, preparar_turnos_equipo
 logger = get_logger(__name__)
 
 
+@extend_schema_view(
+    list=extend_schema(parameters=[PARAM_SEMANA, PARAM_TRABAJADOR]),
+    create=extend_schema(
+        summary="Crea o REEMPLAZA el turno de un dia (upsert por semana+trabajador+dia)",
+        description=(
+            "El serializer hace upsert: repetir un POST del mismo "
+            "`(semana_inicio, trabajador, dia)` reescribe el registro y responde 201."
+        ),
+    ),
+)
 class TurnoEquipoViewSet(ExportMixin, viewsets.ModelViewSet):
     """CRUD de turnos del equipo; filtra por semana/trabajador, importa y exporta."""
 
@@ -34,6 +53,15 @@ class TurnoEquipoViewSet(ExportMixin, viewsets.ModelViewSet):
             qs = qs.filter(trabajador=trabajador)
         return qs
 
+    @extend_schema(
+        summary="Importa turnos desde un CSV/Excel (multipart, campo 'archivo')",
+        request={"multipart/form-data": ImportarTurnosSerializer},
+        responses={
+            201: ImportarRespuestaSerializer,
+            400: ErrorDominioSerializer,  # ArchivoInvalidoError: falta o es ilegible
+            422: ErrorDominioSerializer,  # ImportacionError: se leyo, no se guardo nada
+        },
+    )
     @action(detail=False, methods=["post"], serializer_class=ImportarTurnosSerializer)
     def importar(self, request):
         """Importa turnos desde un CSV/Excel (campo multipart 'archivo')."""
@@ -53,6 +81,11 @@ class TurnoEquipoViewSet(ExportMixin, viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @extend_schema(
+        summary="PDF de los turnos del equipo",
+        parameters=[PARAM_SEMANA, PARAM_TRABAJADOR],
+        responses={(200, MIME_PDF): RESP_PDF},
+    )
     @action(detail=False, methods=["get"])
     def imprimir(self, request):
         """PDF con formato de los turnos de `?semana_inicio=` (opcional `?trabajador=`)."""
