@@ -40,6 +40,19 @@ class Settings(BaseSettings):
     THROTTLE_USER: str = "300/min"    # peticiones autenticadas
     THROTTLE_TOKEN: str = "10/min"    # intentos de obtener token (frena fuerza bruta)
 
+    # ─── Observabilidad ──────────────────────────────────────────────────────
+    # Formato de log: "json" en contenedores (parseable por un agregador) y "texto"
+    # en desarrollo, donde un humano lo lee en la consola.
+    LOG_FORMATO: str = "texto"
+    LOG_LEVEL: str = "INFO"
+
+    # Token de /metrics. django-prometheus expone ese endpoint SIN autenticacion, y la
+    # regla del proyecto es que solo "/" y "/healthz/" sean publicos: las metricas
+    # revelan rutas, latencias y volumen por endpoint. Con el token vacio el endpoint
+    # queda DESHABILITADO (404), no abierto: un despliegue que olvide la variable no
+    # publica sus metricas por accidente.
+    METRICS_TOKEN: str = ""
+
     # Base de datos: si se define, `config.settings` la parsea con dj-database-url
     # (p. ej. postgres://user:pass@localhost:5432/all_in_django). Vacía/None → SQLite local.
     DATABASE_URL: str | None = None

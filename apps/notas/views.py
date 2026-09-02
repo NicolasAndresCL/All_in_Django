@@ -1,8 +1,11 @@
 """ViewSet del módulo Notas (CRUD + exportar md/txt)."""
 
 from django.http import HttpResponse
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
+
+from core.openapi import MIME_MD, MIME_TXT, PARAM_FMT_NOTA, RESP_NOTA_TEXTO
 
 from .models import Nota
 from .serializers import NotaSerializer
@@ -15,6 +18,11 @@ class NotaViewSet(viewsets.ModelViewSet):
     queryset = Nota.objects.all()
     serializer_class = NotaSerializer
 
+    @extend_schema(
+        summary="Descarga la nota en markdown o texto plano",
+        parameters=[PARAM_FMT_NOTA],
+        responses={(200, MIME_MD): RESP_NOTA_TEXTO, (200, MIME_TXT): RESP_NOTA_TEXTO},
+    )
     @action(detail=True, methods=["get"])
     def exportar(self, request, pk=None):
         """Descarga la nota: ?fmt=md (markdown crudo) | txt (texto plano)."""

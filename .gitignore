@@ -18,7 +18,15 @@ db.sqlite3-journal
 
 # Datos reales (volcados de migración, no son fixtures de test para versionar):
 # contienen horarios, tareas y notas personales del autor.
-fixtures/
+# Anclado a la raiz: postman/fixtures/ SI se versiona (CSV de ejemplo de 5 filas).
+/fixtures/
+
+# Esquema OpenAPI generado; se regenera con `manage.py spectacular`.
+schema.yml
+
+# Token con el que Prometheus lee /metrics. Es un secreto: el compose lo monta
+# como archivo y se genera por entorno (ver .env.docker.example).
+infra/observabilidad/token
 
 # Secretos / config local
 .env
@@ -59,6 +67,9 @@ memory.md
 
 # Registro de trabajo pendiente (uso local)
 pendientes.md
+
+# Aprendizaje tecnico por tecnologia (uso local)
+aprendizaje.md
 
 # Config local de Claude Code (personal, no versionar)
 .claude/settings.local.json

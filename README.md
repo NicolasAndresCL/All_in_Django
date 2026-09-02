@@ -79,8 +79,10 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 |---|---|---|
 | Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root, `HEALTHCHECK`), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
 | Orquestación local | `docker-compose.yml` (build local) | Postgres 18 + API + UI (healthchecks + `depends_on`) |
-| Respaldos | `scripts/respaldar_bd.ps1`, `scripts/restaurar_bd.ps1` | dumps `-Fc` verificados del volumen |
-| CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build **y arranque** |
+| Respaldos | `scripts/respaldar_bd.ps1`, `scripts/restaurar_bd.ps1` | dumps `-Fc` verificados del volumen (a mano) |
+| Respaldo programado | `Jenkinsfile.respaldo` | job nocturno que **restaura** el dump y compara el censo |
+| CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build, arranque **y pruebas HTTP** |
+| Pruebas de API | `postman/` + `docker-compose.test.yml` + `scripts/probar_api.ps1` | stack efímero + colección Postman (Newman) |
 | Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver+sha, **no** `latest`) |
 | **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de GHCR por compose, con respaldo previo y **rollback** |
 | Nube | `infra/terraform/` (AWS EC2 + RDS Postgres 18) | infra en la nube (skeleton) |
@@ -197,18 +199,51 @@ IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.y
 > `-p all-in-django`: **dos stacks distintos para la misma app**, y el healthcheck buscaba un
 > contenedor `all-in-django-api-1` que no existía.
 
-**Prerequisitos en Jenkins**:
-- Contenedor de Jenkins con **docker CLI + docker compose** y **`/var/run/docker.sock` montado**
-  (despliega en el mismo daemon).
-- Credencial **Secret file `all-in-django-env`** = contenido de `.env.docker` (SECRET_KEY fuerte,
-  `POSTGRES_*`, `API_TOKEN`). El pipeline la materializa al workspace y la borra al terminar,
-  junto con los dumps.
-- Si los paquetes GHCR son **privados**: credencial **Username/Password `ghcr-credentials`**
-  (usuario GitHub + PAT con `read:packages`) y marcar el parámetro `GHCR_PRIVATE`.
+**Prerequisitos en Jenkins** (ya montados en la máquina de desarrollo):
+
+| Requisito | Por qué | Estado |
+|---|---|---|
+| Imagen de Jenkins **con cliente de Docker** | `jenkins/jenkins` no trae el binario `docker`: sin él, cada `sh 'docker …'` muere con `docker: not found`, aunque el socket esté montado | `jenkins/Dockerfile` |
+| `/var/run/docker.sock` montado | Despliega en el mismo daemon | ya estaba |
+| Credencial **Secret file `all-in-django-env`** | Contenido de `.env.docker`. El pipeline la materializa al workspace y la borra al terminar | `init.groovy.d/10-…` |
+| Job **`all-in-django-cd`** (Pipeline desde SCM) | El Jenkinsfile viaja con el código | `init.groovy.d/20-…` |
+| Credencial `ghcr-credentials` | **Solo** si los paquetes GHCR son privados; marcar entonces `GHCR_PRIVATE` | pendiente si aplica |
+
+> Credenciales y jobs se crean con scripts Groovy de arranque, no a mano. Es la única
+> vía programática para una credencial: su contenido se cifra con la clave maestra de
+> Jenkins, así que escribir `credentials.xml` desde fuera no funciona. Detalle en
+> `jenkins/README.md`.
 
 > **Nota (`latest`)**: Actions publica `{{version}}`/`{{major}}.{{minor}}`/`sha` pero **no
-> `latest`** — pasa el semver publicado en `IMAGE_TAG` (p. ej. `1.0.0` o `1.0`). Valida el
-> `Jenkinsfile` en tu Jenkins con el *Declarative Linter* o *Replay*.
+> `latest`** — pasa el semver publicado en `IMAGE_TAG`. El pipeline **aborta** si recibe
+> `latest` o un valor vacío.
+
+#### Ensayar el pipeline sin publicar nada
+
+`REGISTRY` es un parámetro del job (por defecto `ghcr.io`). Apuntándolo a un registry
+local se ejercita el pipeline **entero** —pull, deploy, healthcheck, rollback— sin
+subir una imagen a ningún sitio. Una tubería que solo se puede probar publicando no se
+ensaya nunca.
+
+```bash
+docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:1.0.0
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:1.0.0
+docker push localhost:5000/nicolasandrescl/all-in-django-api:1.0.0
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:1.0.0
+# y lanzar el job con IMAGE_TAG=1.0.0  REGISTRY=localhost:5000
+```
+
+Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
+leyendo el Jenkinsfile** (ambos ya corregidos): en un pipeline declarativo los bloques
+`post` corren en orden `always` → `failure`/`success` → `cleanup`, de modo que limpiar
+en `always` borraba el respaldo antes de archivarlo y el `.env.docker` antes de que el
+rollback pudiera usarlo — el rollback fallaba justo cuando hacía falta.
+
+**Para comprobar que el rollback funciona hay que provocar un fallo**, no confiar en
+que el código parece correcto: se publica una imagen que arranque pero no responda al
+healthcheck, se despliega, y se verifica que el servicio vuelve solo a la versión
+anterior.
 
 ### Terraform (AWS) y Helm (Kubernetes)
 
@@ -321,6 +356,108 @@ los enlaces `next` (así lo hace `nicegui_ui/api_client.py`).
 | `/api/notas/{id}/exportar/?fmt=md\|txt` | GET | descarga la nota |
 | `/api/tv/canales/?buscar=` | GET | canales (scraping, cache 1h) |
 | `/api/<recurso>/exportar/?formato=excel\|pdf` | GET | export en clases/turnos/tareas |
+| `/api/schema/` | GET | esquema **OpenAPI 3** generado del código (drf-spectacular) |
+| `/api/schema/swagger-ui/` | GET | visor interactivo del esquema (pide sesión de admin) |
+| `/metrics` | GET | métricas Prometheus. **No público**: `Authorization: Bearer <METRICS_TOKEN>` |
+
+### El contrato: esquema OpenAPI
+
+El esquema lo genera **drf-spectacular** a partir de los serializers y de las anotaciones
+`@extend_schema`, así que no puede quedarse desfasado como una tabla escrita a mano. Las
+acciones que devuelven archivos (`imprimir`, `exportar`, `notas/…/exportar`) van anotadas en
+[`core/openapi.py`](core/openapi.py): sin eso el esquema declararía `application/json` para un
+PDF, que es peor que no documentarlo.
+
+```powershell
+python manage.py spectacular --validate --fail-on-warn --file schema.yml
+```
+
+El esquema **no es público**: hereda `IsAuthenticated` como el resto de `/api/`. Se consulta
+con token o con sesión de admin (para el Swagger UI, entra antes en `/admin/`).
+
+### Probar la API con Postman
+
+La suite de pytest usa `force_authenticate`: **nunca atraviesa** gunicorn, WhiteNoise, el
+middleware, la autenticación por token real ni el rate limiting. La colección de `postman/`
+sí: 79 peticiones y ~183 aserciones contra una API de verdad.
+
+```powershell
+.\scripts\probar_api.ps1                              # levanta, prueba y limpia (~17 s)
+.\scripts\probar_api.ps1 -Carpeta '04 - Registro de tareas'
+.\scripts\probar_api.ps1 -Conservar -Informe .\newman.json   # para depurar un fallo
+```
+
+El script levanta [`docker-compose.test.yml`](docker-compose.test.yml) — un stack **aparte**,
+con base vacía, puertos altos (8010/5434) y **sin volumen** — crea un usuario de pruebas y
+corre la colección con Newman (vía `npx`, no hace falta instalarlo). **Tus datos no se tocan
+en ningún momento**: el stack de pruebas ni siquiera monta `all_in_django_pgdata`.
+
+| Archivo | Qué es |
+|---|---|
+| `postman/all_in_django.postman_collection.json` | la colección (v2.1.0). **Fuente de verdad**, versionada |
+| `postman/local.postman_environment.json` | plantilla de entorno: `base_url`, `username`, `password`. Sin secretos |
+| `postman/fixtures/turnos_ejemplo.csv` | archivo de ejemplo para `turnos-equipo/importar/` |
+
+Las carpetas se ejecutan **en orden** y comparten variables (`token`, ids): la 00 obtiene el
+token, la 98 borra lo creado y la 99 va al final porque **agota el rate limit** de
+`/api/token/`. Además de los caminos felices, se afirman los infelices: 401 sin token, 400 por
+`dia` fuera de los choices, 405, y que los errores de dominio conserven la forma
+`{"error", "tipo"}`.
+
+**A mano, en la app de Postman**: importa la colección y el entorno, rellena `username` y
+`password`, y usa el Runner. Una limitación conocida: Postman no importa rutas de archivos
+locales, así que en la petición *Importar CSV* hay que volver a seleccionar
+`postman/fixtures/turnos_ejemplo.csv`.
+
+> Si la corres contra un entorno con datos reales, usa solo las carpetas de lectura. Las de
+> escritura marcan todo lo que crean (`POSTMAN-SMOKE`, semanas de 2099) y lo borran al final,
+> pero un fallo a medio camino deja residuos.
+
+## Observabilidad
+
+Los healthchecks dicen *"el proceso responde"*, no *"la aplicación funciona"*. Este proyecto ya
+sufrió la diferencia: el stack entero en `healthy` mientras la UI devolvía **401 en cada vista**
+por un token que no correspondía a la base. Eso es lo que la observabilidad ve y un healthcheck no.
+
+**Métricas** — `/metrics` (django-prometheus), **no público**: exige
+`Authorization: Bearer <METRICS_TOKEN>`. Con la variable vacía el endpoint responde **404**
+(deshabilitado, no abierto), así que olvidarla no publica las métricas por accidente.
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # genéralo una vez
+# El mismo valor va en .env.docker (METRICS_TOKEN) y en infra/observabilidad/token
+```
+
+**Logs** — `LOG_FORMATO=json` (por defecto en contenedor) emite una línea JSON por evento, tanto
+en Django como en **gunicorn**. `LOG_FORMATO=texto` mantiene el formato legible en desarrollo.
+
+```json
+{"remoto":"172.24.0.1","metodo":"GET","ruta":"/api/","status":"401","duracion_us":"2674"}
+{"timestamp":"...","level":"WARNING","name":"django.request","message":"Unauthorized: /api/","status_code":401}
+```
+
+**Alertas** — Prometheus va en el compose bajo un *profile*, así que el stack de diario no cambia:
+
+```powershell
+docker compose --env-file .env.docker --profile observabilidad up -d
+# http://localhost:9090  ->  Status/Targets y Alerts
+```
+
+| Alerta | Se dispara cuando |
+|---|---|
+| `ApiCaida` | Prometheus lleva 1 min sin poder leer `/metrics` |
+| `Ratio401Alto` | más del 40% de las respuestas son 401 durante 2 min |
+| `Ratio5xxAlto` | más del 5% son 5xx durante 2 min |
+| `LatenciaAlta` | el p95 supera 2 s durante 5 min |
+
+El umbral de 401 es alto a propósito: la API rechaza peticiones sin token por diseño, así que lo
+anómalo no es que haya 401 sino que sean la mayoría. Comprobado provocando el fallo: con la UI
+usando un token inválido, `docker ps` seguía mostrando los cuatro contenedores `healthy` y
+`Ratio401Alto` pasó a **FIRING**; al restaurar el token volvió a `inactive`.
+
+> Con varios workers de gunicorn cada proceso lleva sus propios contadores, así que la imagen
+> define `PROMETHEUS_MULTIPROC_DIR` y el entrypoint lo vacía en cada arranque. Sin eso, `/metrics`
+> devolvería los números de **un** worker al azar.
 
 ## UI NiceGUI (opcional)
 
@@ -478,9 +615,12 @@ pytest nicegui_ui/tests                 # UI: cliente + smoke de páginas (HTTP 
 # Cobertura con coverage.py (vía pytest-cov):
 pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term-missing
 
+# Pruebas HTTP contra una API de verdad (stack efímero; no toca tus datos):
+.\scripts\probar_api.ps1
+
 # Todo lo que verifica el CI, en el mismo orden (correr ANTES de commitear):
 .\scripts\verificar.ps1
-.\scripts\verificar.ps1 -Rapido       # salta el arranque del stack (lo más lento)
+.\scripts\verificar.ps1 -Rapido       # salta los dos pasos con Docker (lo más lento)
 ```
 
 ### Lo que verifica el CI
@@ -491,14 +631,17 @@ algo que un lint de segundos ya iba a rechazar:
 | Job | Qué comprueba |
 |---|---|
 | `lint` | `ruff check` (imports muertos, orden, modismos obsoletos). Config en `pyproject.toml` |
-| `test` | pytest en SQLite con **`--cov-fail-under=80`**: la cobertura es condición de fallo, no un número decorativo |
+| `test` | pytest en SQLite con **`--cov-fail-under=80`** (la cobertura es condición de fallo, no un número decorativo) y validación del **esquema OpenAPI** con `--fail-on-warn` |
 | `test-postgres` | la misma suite contra **Postgres 18 real** (servicio de Actions), con `-rs` para que los saltados sean visibles |
 | `deploy-check` | `manage.py check --deploy --fail-level WARNING` con `DEBUG=False` + `SECURE_HTTPS=True` y una `SECRET_KEY` efímera |
-| `build` | construye ambas imágenes **y levanta el stack**, esperando a que los tres servicios queden `healthy` |
+| `build` | construye ambas imágenes, **levanta el stack** esperando a que los tres servicios queden `healthy` y le **pasa la colección Postman con Newman** |
 
 El último es el que importa: un CI que solo comprueba que la imagen *compila* da falsa
 seguridad, porque los fallos reales (migraciones, conexión a la base, token de la UI) aparecen
-al **arrancar**.
+al **arrancar** — y algunos, solo al *usarla*. Por eso el job no se conforma con el
+healthcheck: crea un usuario real dentro del contenedor y ejercita la API por HTTP. El
+`API_TOKEN` que el job fabrica es un placeholder que no corresponde a ningún token de la base
+(basta para que la UI arranque), así que las pruebas piden el suyo por `POST /api/token/`.
 
 `.githooks/pre-commit` corre `ruff` sobre los `.py` del commit y `hadolint` sobre los
 Dockerfiles tocados, filtrando por archivos: un commit de documentación no espera a que
@@ -508,8 +651,11 @@ arranquen tres contenedores. Se activa una sola vez con `git config core.hooksPa
 > estilo global que merece su propio commit, no colarse en una refactorización de
 > infraestructura.
 
-224 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
-impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **seguridad**
+236 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **contrato de la
+API** (`test_contrato_api.py`: compara el esquema OpenAPI con la colección Postman y falla si
+un endpoint no tiene ni una petición que lo visite — es lo que impide que la colección
+envejezca en silencio) + **seguridad**
 (`test_seguridad.py`: 401 sin token, obtención/uso del token, rate limit del login con 429,
 validación de `SECRET_KEY` débil y el toggle `SECURE_HTTPS`) + **tests unitarios con
 `unittest.mock`** (`apps/liveops/test_mock.py`: `guardar_turnos` con el modelo mockeado y la
@@ -525,6 +671,10 @@ Deps de test en `requirements-dev.txt` (`pytest`, `pytest-asyncio`, `pytest-djan
 `pytest-cov`, `coverage`, `responses`), que **incluye también `nicegui_ui/requirements.txt`**:
 los tests de la UI importan `gantt.py`/`charts.py` y las vistas (usan plotly/nicegui) y sin
 esas deps la recolección de pytest falla con exit 2. `unittest.mock` es de la stdlib.
+
+Las pruebas HTTP (colección Postman) son el único punto que **no** es Python: las ejecuta
+**Newman** vía `npx --yes newman`, así que basta con tener Node instalado; no se añade nada a
+`requirements-dev.txt` ni se instala nada global.
 
 ## Autor
 

@@ -10,7 +10,7 @@ from pathlib import Path
 import dj_database_url
 
 from core.conf import settings as env
-from core.logging import LOGGING as _LOGGING
+from core.logging import construir_logging
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework.authtoken",  # tokens de API (modelo Token; se crean en admin o CLI)
+    "drf_spectacular",  # genera el esquema OpenAPI desde el propio codigo
+    "django_prometheus",  # metricas de peticiones/BD/cache para /metrics
     "apps.calendario",
     "apps.liveops",
     "apps.tareas",
@@ -52,6 +54,11 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # django-prometheus exige envolver TODA la cadena: Before el primero y After el
+    # ultimo. Si se colocan en medio, las latencias medidas dejan fuera el tiempo de
+    # los middlewares que queden por fuera y los contadores pierden las peticiones que
+    # esos middlewares cortan antes (redirects de SSL, por ejemplo).
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # WhiteNoise sirve los estáticos (admin/DRF) directamente desde la app, sin nginx.
     # Debe ir justo después de SecurityMiddleware.
@@ -62,6 +69,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -108,6 +116,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
     "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    # El esquema OpenAPI lo genera drf-spectacular a partir de los serializers y de las
+    # anotaciones @extend_schema de las acciones extra. Es el contrato publicado de la API
+    # (/api/schema/) y la referencia contra la que se valida la coleccion Postman.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Rate limiting (rates configurables por env; ver core/conf.py).
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
@@ -118,6 +130,21 @@ REST_FRAMEWORK = {
         "user": env.THROTTLE_USER,
         "token": env.THROTTLE_TOKEN,  # scope del endpoint /api/token/
     },
+}
+
+# ─── OpenAPI (drf-spectacular) ───────────────────────────────────────────────
+# SERVE_INCLUDE_SCHEMA=False: el propio endpoint del esquema no se documenta a si mismo.
+# El esquema NO es publico: queda tras IsAuthenticated como el resto de /api/ (solo "/" y
+# "/healthz/" son publicos). Se consulta con sesion de admin o con token.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "All in Django - API",
+    "DESCRIPTION": (
+        "API REST de All in Django: calendario de estudio, turnos personales y de equipo, "
+        "registro de tareas, notas y parrilla de TV chilena. Autenticacion por token "
+        "(`Authorization: Token <clave>`) obtenido en `/api/token/`."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 # ─── Password validators ─────────────────────────────────────────────────────
@@ -144,4 +171,5 @@ STORAGES = {
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-LOGGING = _LOGGING
+# Formato y nivel salen de core.conf: "json" en contenedores, "texto" en desarrollo.
+LOGGING = construir_logging(env.LOG_FORMATO, env.LOG_LEVEL)
