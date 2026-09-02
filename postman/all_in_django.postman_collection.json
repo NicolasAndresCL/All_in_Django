@@ -3213,6 +3213,42 @@
               }
             }
           ]
+        },
+        {
+          "name": "/metrics NUNCA es publico",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            },
+            "description": "django-prometheus registra /metrics SIN autenticacion; aqui va envuelto en un bearer (core/metrics.py). Las metricas revelan rutas, latencias y volumen por endpoint: un mapa de la aplicacion.\\n\\nLos dos resultados validos son 404 (METRICS_TOKEN sin configurar: el endpoint no existe) y 401 (configurado, pero sin credenciales). Un 200 aqui significa que se abrio por accidente.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401, 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401, 404]);",
+                  "});",
+                  "pm.test('No expone ni una metrica sin credenciales', function () {",
+                  "    pm.expect(pm.response.text()).to.not.include('django_http_');",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

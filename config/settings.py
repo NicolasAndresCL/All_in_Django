@@ -10,7 +10,7 @@ from pathlib import Path
 import dj_database_url
 
 from core.conf import settings as env
-from core.logging import LOGGING as _LOGGING
+from core.logging import construir_logging
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework.authtoken",  # tokens de API (modelo Token; se crean en admin o CLI)
     "drf_spectacular",  # genera el esquema OpenAPI desde el propio codigo
+    "django_prometheus",  # metricas de peticiones/BD/cache para /metrics
     "apps.calendario",
     "apps.liveops",
     "apps.tareas",
@@ -53,6 +54,11 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # django-prometheus exige envolver TODA la cadena: Before el primero y After el
+    # ultimo. Si se colocan en medio, las latencias medidas dejan fuera el tiempo de
+    # los middlewares que queden por fuera y los contadores pierden las peticiones que
+    # esos middlewares cortan antes (redirects de SSL, por ejemplo).
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # WhiteNoise sirve los estáticos (admin/DRF) directamente desde la app, sin nginx.
     # Debe ir justo después de SecurityMiddleware.
@@ -63,6 +69,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -164,4 +171,5 @@ STORAGES = {
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-LOGGING = _LOGGING
+# Formato y nivel salen de core.conf: "json" en contenedores, "texto" en desarrollo.
+LOGGING = construir_logging(env.LOG_FORMATO, env.LOG_LEVEL)

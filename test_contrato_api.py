@@ -121,10 +121,10 @@ def test_todo_endpoint_del_esquema_esta_probado(esquema, cubiertas):
 def test_la_coleccion_no_apunta_a_endpoints_inexistentes(esquema, cubiertas):
     """El reves del anterior: peticiones que sobreviven a un endpoint ya borrado.
 
-    Se toleran las rutas que el esquema no describe por naturaleza: `/healthz/` y `/` son
-    vistas Django planas (no DRF), `/api/` es la raiz del router y `/api/schema/` no se
-    autodocumenta (`SERVE_INCLUDE_SCHEMA: False`).
+    Se toleran las rutas que el esquema no describe por naturaleza: `/healthz/`, `/` y
+    `/metrics` son vistas Django planas (no DRF), `/api/` es la raiz del router y
+    `/api/schema/` no se autodocumenta (`SERVE_INCLUDE_SCHEMA: False`).
     """
-    conocidas = set(esquema["paths"]) | {"/healthz/", "/", "/api/", "/api/schema/"}
+    conocidas = set(esquema["paths"]) | {"/healthz/", "/", "/api/", "/api/schema/", "/metrics"}
     huerfanas = sorted({ruta for _, ruta in cubiertas if ruta not in conocidas})
     assert not huerfanas, f"la coleccion llama a rutas que ya no existen: {huerfanas}"

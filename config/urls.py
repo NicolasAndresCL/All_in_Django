@@ -12,6 +12,7 @@ from apps.notas.views import NotaViewSet
 from apps.tareas.views import RegistroViewSet
 from apps.tv.views import CanalesTVView
 from core.api import ObtenerToken
+from core.metrics import metrics
 
 router = DefaultRouter()
 router.register("clases", ClaseViewSet, basename="clase")
@@ -23,6 +24,10 @@ router.register("notas", NotaViewSet, basename="nota")
 urlpatterns = [
     path("", inicio, name="inicio"),
     path("healthz/", healthz, name="healthz"),  # readiness para Compose/K8s
+    # Metricas de Prometheus. NO es publico (a diferencia del default de
+    # django_prometheus.urls): exige bearer con METRICS_TOKEN, y sin token
+    # configurado responde 404. Ver core/metrics.py.
+    path("metrics", metrics, name="prometheus-django-metrics"),
     path("admin/", admin.site.urls),
     path("api/token/", ObtenerToken.as_view(), name="api-token"),  # login por token
     path("api/tv/canales/", CanalesTVView.as_view(), name="tv-canales"),

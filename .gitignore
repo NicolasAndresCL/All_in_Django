@@ -24,6 +24,10 @@ db.sqlite3-journal
 # Esquema OpenAPI generado; se regenera con `manage.py spectacular`.
 schema.yml
 
+# Token con el que Prometheus lee /metrics. Es un secreto: el compose lo monta
+# como archivo y se genera por entorno (ver .env.docker.example).
+infra/observabilidad/token
+
 # Secretos / config local
 .env
 .env.*.local
