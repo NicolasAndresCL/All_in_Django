@@ -79,7 +79,8 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 |---|---|---|
 | Imágenes | `Dockerfile` (API, gunicorn+WhiteNoise, no-root, `HEALTHCHECK`), `nicegui_ui/Dockerfile` (UI) | contenedores de API y UI |
 | Orquestación local | `docker-compose.yml` (build local) | Postgres 18 + API + UI (healthchecks + `depends_on`) |
-| Respaldos | `scripts/respaldar_bd.ps1`, `scripts/restaurar_bd.ps1` | dumps `-Fc` verificados del volumen |
+| Respaldos | `scripts/respaldar_bd.ps1`, `scripts/restaurar_bd.ps1` | dumps `-Fc` verificados del volumen (a mano) |
+| Respaldo programado | `Jenkinsfile.respaldo` | job nocturno que **restaura** el dump y compara el censo |
 | CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build, arranque **y pruebas HTTP** |
 | Pruebas de API | `postman/` + `docker-compose.test.yml` + `scripts/probar_api.ps1` | stack efímero + colección Postman (Newman) |
 | Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver+sha, **no** `latest`) |
