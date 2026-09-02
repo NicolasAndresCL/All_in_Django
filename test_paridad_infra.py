@@ -128,6 +128,51 @@ def test_el_pod_de_la_api_se_anuncia_scrapeable():
         assert anotacion in deployment
 
 
+# ─── secretos versionados: cifrados o no versionados ─────────────────────────
+SECRETOS = RAIZ / "infra" / "helm" / "secretos"
+CLAVES_SENSIBLES = ("secretKey", "apiToken", "databaseUrl", "metricsToken")
+
+
+def test_los_secretos_del_chart_estan_cifrados():
+    """El unico control que impide commitear el archivo EN CLARO.
+
+    SOPS cifra al editar con `sops <archivo>`, pero nada obliga a usarlo: quien escriba el
+    YAML con un editor normal y haga `git add` sube las credenciales en texto plano, y el
+    diff de un secreto no llama la atencion en una revision. Este test lo convierte en un
+    build en rojo. Es lo mismo que hace `test_contrato_api.py` con la coleccion Postman:
+    el problema nunca es el fallo concreto, es que nada impida que ocurra.
+    """
+    cifrados = list(SECRETOS.glob("*.enc.yaml"))
+    assert cifrados, f"no hay ningun archivo de secretos en {SECRETOS}"
+
+    for archivo in cifrados:
+        contenido = _texto(archivo)
+        datos = yaml.safe_load(contenido)
+        assert "sops" in datos, f"{archivo.name} no lleva metadata de sops: esta SIN cifrar"
+        for clave in CLAVES_SENSIBLES:
+            valor = datos.get("secret", {}).get(clave)
+            if valor is None:
+                continue
+            assert valor.startswith("ENC[AES256_GCM,"), (
+                f"{archivo.name}: '{clave}' esta EN CLARO ({valor[:20]}...). "
+                f"Edita con `sops {archivo.name}`, nunca con un editor normal."
+            )
+
+
+def test_la_regla_de_sops_cubre_la_carpeta_de_secretos():
+    r"""Sin `creation_rules` que case, sops aborta con 'no matching creation rules found' y
+    es facil "resolverlo" guardando el archivo a mano — en claro. El separador va como
+    `[\\/]` porque sops compara el regex contra la ruta TAL COMO se la pasan, y en
+    PowerShell eso lleva barras invertidas."""
+    reglas = yaml.safe_load(_texto(RAIZ / ".sops.yaml"))["creation_rules"]
+    assert reglas, ".sops.yaml sin creation_rules"
+    patron = reglas[0]["path_regex"]
+    assert r"[\\/]" in patron, f"path_regex solo casa un separador: {patron}"
+    for ruta in ("infra/helm/secretos/x.enc.yaml", r"infra\helm\secretos\x.enc.yaml"):
+        assert re.search(patron, ruta), f"la regla no casa con {ruta}"
+    assert reglas[0]["age"].startswith("age1"), "falta el destinatario age"
+
+
 @pytest.mark.parametrize("clave", ["SECRET_KEY", "API_TOKEN"])
 def test_los_secretos_obligatorios_fallan_pronto(clave):
     """Mismo fail-fast que ${VAR:?} en el compose. Sin API_TOKEN la UI levanta 'sana' y

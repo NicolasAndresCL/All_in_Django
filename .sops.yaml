@@ -1,0 +1,23 @@
+# Reglas de cifrado de SOPS. Se aplican por RUTA: sops las lee al crear o editar un
+# archivo, asi que nadie tiene que acordarse de pasar la clave en la linea de comandos
+# (y por tanto nadie puede olvidarse y commitear el archivo en claro).
+#
+# Por que SOPS + age y no SealedSecrets: SealedSecrets necesita un controller corriendo
+# EN el cluster, y aqui el cluster todavia no existe. SOPS cifra en el repositorio, con
+# una clave local, y sirve igual para un `helm install` a mano que para GitOps mas
+# adelante. age en vez de PGP: una clave de una linea, sin anillo de claves ni agente.
+#
+# `encrypted_regex` cifra SOLO los valores de esas claves: el resto del YAML (estructura,
+# comentarios, nombres) queda legible, asi que el diff de un cambio sigue siendo revisable
+# y solo cambian las lineas de los secretos que de verdad se tocaron.
+creation_rules:
+  # El separador va como [\\/] y no como '/': sops compara el path_regex contra la ruta TAL
+  # COMO se la pasas, y en PowerShell eso es `infra\helm\secretos\...`. Con '/' a secas la
+  # regla no casa y sops aborta con 'no matching creation rules found' — que suena a que la
+  # configuracion no se lee, cuando el problema es que no coincide.
+  - path_regex: infra[\\/]helm[\\/]secretos[\\/].*\.enc\.yaml$
+    encrypted_regex: ^(secretKey|apiToken|databaseUrl|metricsToken)$
+    # Clave PUBLICA (destinatario). Es publica a proposito: cifrar solo necesita esto, asi
+    # que puede versionarse. La privada vive en %APPDATA%\sops\age\keys.txt y NO sale de la
+    # maquina: sin ella el archivo cifrado es irrecuperable.
+    age: age1v87su49ezp202csmdc86zxxpa4x7wmz3wuw3n2u6a03sv34kec2s28l4gp
