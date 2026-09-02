@@ -1,0 +1,191 @@
+// Respaldo PROGRAMADO de All in Django, con restauracion verificada de verdad.
+//
+// POR QUE EXISTE
+// `scripts/respaldar_bd.ps1` funciona, pero depende de que alguien se acuerde de
+// lanzarlo — y un respaldo que depende de la memoria es el mismo mecanismo que ya
+// fallo antes. Este pipeline lo dispara solo cada noche.
+//
+// QUE ANADE SOBRE EL SCRIPT
+// El script comprueba que el dump es LEGIBLE (`pg_restore --list`). Eso no es lo mismo
+// que comprobar que RESTAURA: un dump puede listarse entero y fallar al aplicarse.
+// Aqui se restaura de verdad en una base desechable y se compara el censo de filas
+// tabla a tabla con la original. Si no cuadra, el job falla — que es justo el dia en
+// que uno quiere enterarse, y no el dia que hace falta el respaldo.
+//
+// La base de verificacion se crea y se DESTRUYE en el mismo build (siempre, incluso si
+// falla), y nunca se toca la base real: solo se lee.
+
+pipeline {
+    agent any
+
+    triggers {
+        // 'H' reparte la hora dentro del intervalo para no clavar todos los jobs de
+        // Jenkins en el mismo minuto. De madrugada, cuando nadie usa la aplicacion.
+        cron('H 3 * * *')
+    }
+
+    parameters {
+        string(name: 'RETENER', defaultValue: '10',
+               description: 'Cuantos dumps conservar en el workspace. Los mas antiguos se borran.')
+    }
+
+    environment {
+        DB_CTR   = 'all_in_django-db'
+        PG_USER  = 'all_in_django'
+        PG_DB    = 'all_in_django'
+        // Base desechable donde se ensaya la restauracion. Nombre fijo y distinto de la
+        // real: un typo aqui no puede pisar los datos buenos.
+        PG_VERIF = 'all_in_django_verificacion_respaldo'
+        DESTINO  = 'respaldos'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+    }
+
+    stages {
+        stage('Comprobar que hay base') {
+            steps {
+                sh '''
+                    set -e
+                    estado=$(docker inspect -f '{{.State.Status}}' "$DB_CTR" 2>/dev/null || echo ausente)
+                    if [ "$estado" != "running" ]; then
+                        echo "El contenedor $DB_CTR no esta corriendo (estado: $estado)."
+                        echo "Sin base no hay respaldo: esto es un fallo, no un 'no habia nada que hacer'."
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Dump') {
+            steps {
+                sh '''
+                    set -e
+                    mkdir -p "$DESTINO"
+                    nombre="all_in_django_$(date +%Y%m%d_%H%M%S).dump"
+                    echo "$nombre" > .nombre-dump
+
+                    # -Fc (custom): trae los SEQUENCE SET, asi que las secuencias quedan al
+                    # dia solas al restaurar. El camino dumpdata/loaddata si exige resetearlas.
+                    docker exec "$DB_CTR" pg_dump -U "$PG_USER" -d "$PG_DB" -Fc -f "/tmp/$nombre"
+
+                    # pg_restore --list NO lee de stdin: opera sobre un archivo real dentro
+                    # del contenedor. Se comprueba ANTES de sacarlo.
+                    docker exec "$DB_CTR" pg_restore --list "/tmp/$nombre" > /dev/null
+
+                    # El binario se saca con docker cp, nunca por una tuberia.
+                    docker cp "$DB_CTR:/tmp/$nombre" "$DESTINO/$nombre"
+                    docker exec "$DB_CTR" rm -f "/tmp/$nombre"
+
+                    tam=$(wc -c < "$DESTINO/$nombre")
+                    if [ "$tam" -lt 1024 ]; then
+                        echo "El dump salio de $tam bytes: sospechoso, se descarta."
+                        rm -f "$DESTINO/$nombre"
+                        exit 1
+                    fi
+                    echo "Dump generado y legible: $DESTINO/$nombre ($tam bytes)"
+                '''
+            }
+        }
+
+        stage('Restaurar de verdad y comparar') {
+            steps {
+                sh '''
+                    set -e
+                    nombre=$(cat .nombre-dump)
+
+                    # Censo de la base REAL (solo lectura). COUNT(*) de verdad, no
+                    # n_live_tup: esa columna son ESTIMACIONES del planificador, se
+                    # actualizan con ANALYZE/autovacuum y pueden ir meses por detras. El
+                    # primer intento de este job uso n_live_tup y fallo dando por malo un
+                    # respaldo correcto: la base real reportaba 9 clases y 3 tareas cuando
+                    # tenia 144 y 582. Un falso negativo aqui es tan inutil como no tener
+                    # la comprobacion.
+                    #
+                    # query_to_xml permite hacer el COUNT(*) de cada tabla desde una sola
+                    # consulta, sin generar SQL a mano ni conocer los nombres de antemano.
+                    #
+                    # Las cadenas SQL van con dollar-quoting ($$...$$) y no con comillas
+                    # simples: la variable del shell ya usa comillas simples, y en SQL las
+                    # comillas DOBLES delimitan identificadores, no texto.
+                    censo='
+                        SELECT relname,
+                               (xpath(
+                                   $$/row/c/text()$$,
+                                   query_to_xml(
+                                       format($$SELECT count(*) AS c FROM %I.%I$$, schemaname, relname),
+                                       false, true, $$$$
+                                   )
+                               ))[1]::text::bigint AS filas
+                        FROM pg_stat_user_tables
+                        ORDER BY relname;
+                    '
+                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_DB" -At -F"|" -c "$censo" > censo_original.txt
+                    echo "Tablas en la base real: $(wc -l < censo_original.txt)"
+
+                    # Base desechable. Se borra primero por si un build anterior murio a medias.
+                    docker exec "$DB_CTR" dropdb -U "$PG_USER" --if-exists "$PG_VERIF"
+                    docker exec "$DB_CTR" createdb -U "$PG_USER" "$PG_VERIF"
+
+                    # El dump vuelve a entrar al contenedor para restaurarlo.
+                    docker cp "$DESTINO/$nombre" "$DB_CTR:/tmp/verificar.dump"
+                    docker exec "$DB_CTR" pg_restore -U "$PG_USER" -d "$PG_VERIF" --no-owner /tmp/verificar.dump
+                    docker exec "$DB_CTR" rm -f /tmp/verificar.dump
+
+                    # El MISMO censo sobre la restaurada. Al contar filas de verdad no
+                    # hace falta ANALYZE previo.
+                    docker exec "$DB_CTR" psql -U "$PG_USER" -d "$PG_VERIF" -At -F"|" -c "$censo" > censo_restaurado.txt
+
+                    echo "--- censo original vs restaurado ---"
+                    if diff -u censo_original.txt censo_restaurado.txt; then
+                        echo "RESTAURACION VERIFICADA: el censo coincide tabla a tabla."
+                    else
+                        echo "EL RESPALDO NO RESTAURA IGUAL. Arriba, las diferencias."
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Rotar') {
+            steps {
+                sh '''
+                    set -e
+                    # Conservar los N mas recientes. `ls -t` ordena por fecha descendente.
+                    cd "$DESTINO"
+                    total=$(ls -1 all_in_django_*.dump 2>/dev/null | wc -l)
+                    if [ "$total" -gt "$RETENER" ]; then
+                        ls -t all_in_django_*.dump | tail -n +$((RETENER + 1)) | while read -r v; do
+                            echo "Rotando (borrando) $v"
+                            rm -f "$v"
+                        done
+                    fi
+                    echo "Dumps conservados: $(ls -1 all_in_django_*.dump | wc -l)"
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            archiveArtifacts artifacts: 'respaldos/*.dump', allowEmptyArchive: false, fingerprint: true
+            echo "Respaldo del dia hecho, restaurado y verificado."
+        }
+        failure {
+            echo "FALLO EL RESPALDO. Un respaldo que no se puede restaurar no es un respaldo: revisar YA, no el dia que haga falta."
+        }
+        cleanup {
+            // Igual que en el CD: TODA la limpieza en `cleanup`, que corre despues de
+            // success/failure. En `always` se llevaria por delante el dump antes de que
+            // `success` lo archivara.
+            sh '''
+                docker exec "$DB_CTR" dropdb -U "$PG_USER" --if-exists "$PG_VERIF" || true
+                rm -f .nombre-dump censo_original.txt censo_restaurado.txt || true
+            '''
+        }
+    }
+}

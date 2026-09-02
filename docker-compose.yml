@@ -56,6 +56,13 @@ services:
       SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY en .env.docker}
       # La API habla con el servicio 'db' por su nombre de red (no por container_name).
       DATABASE_URL: postgres://${POSTGRES_USER:-all_in_django}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-all_in_django}
+      # Observabilidad. Con METRICS_TOKEN vacio, /metrics responde 404 (deshabilitado,
+      # no abierto): olvidar la variable no publica las metricas por accidente.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # En contenedor, los logs van en JSON: un agregador puede filtrar por level o por
+      # logger sin adivinar con expresiones regulares sobre texto libre.
+      LOG_FORMATO: ${LOG_FORMATO:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       db:
         condition: service_healthy
@@ -83,6 +90,32 @@ services:
         condition: service_healthy
     ports:
       - "${UI_PORT:-8501}:8501"
+    restart: unless-stopped
+
+  # ─── Observabilidad (opcional) ────────────────────────────────────────────
+  # Bajo un profile: el stack de diario NO cambia. Se levanta a proposito con
+  #   docker compose --env-file .env.docker --profile observabilidad up -d
+  # y se consulta en http://localhost:9090 (Alerts / Targets).
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: all_in_django-prometheus
+    profiles: [observabilidad]
+    volumes:
+      - ./infra/observabilidad/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observabilidad/alertas.yml:/etc/prometheus/alertas.yml:ro
+      # El token del scrape entra por un archivo, no por la linea de comandos ni por
+      # el prometheus.yml versionado: asi el secreto no acaba en el repositorio.
+      - ./infra/observabilidad/token:/etc/prometheus/token:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      # Necesario para poder recargar reglas sin reiniciar (util al ajustar umbrales).
+      - --web.enable-lifecycle
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

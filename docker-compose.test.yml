@@ -1,0 +1,54 @@
+# Stack EFIMERO para las pruebas HTTP de la API (coleccion Postman / Newman).
+#
+# No es un override de docker-compose.yml: es un stack aparte, a proposito. La coleccion
+# crea, modifica y borra datos, y el stack normal corre sobre el volumen `all_in_django_pgdata`
+# con los datos reales. Aqui la base nace vacia y muere con el `down`.
+#
+#   .\scripts\probar_api.ps1          # levanta, prueba y limpia (forma recomendada)
+#
+# Diferencias deliberadas con docker-compose.yml:
+#   - Nombre de proyecto propio: no se mezcla con el stack real.
+#   - container_name propios: los del compose principal son fijos y colisionarian.
+#   - Puertos altos por defecto (8010/5434): puede correr con el stack real levantado.
+#   - SIN volumen: los datos viven en la capa del contenedor y se van con `down`. Es la
+#     propiedad que hace seguro correr aqui las peticiones destructivas.
+#   - SIN servicio `ui`: la UI no participa en las pruebas de API y solo alargaria el arranque.
+#   - SIN `env_file`: no debe leer el .env.docker real. Todo llega por variables de entorno,
+#     que `probar_api.ps1` genera al vuelo.
+name: all_in_django_test
+
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: all_in_django-test-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-all_in_django}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD (lo genera probar_api.ps1)}
+      POSTGRES_DB: ${POSTGRES_DB:-all_in_django_test}
+    ports:
+      - "${TEST_DB_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-all_in_django} -d ${POSTGRES_DB:-all_in_django_test}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Efimero: si se cae, que se note; no debe resucitar solo.
+    restart: "no"
+
+  api:
+    build: .
+    container_name: all_in_django-test
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY (lo genera probar_api.ps1)}
+      DEBUG: "False"
+      # 'api' esta en la lista porque el HEALTHCHECK de la imagen pega al contenedor por su
+      # nombre de servicio, igual que en el compose principal.
+      ALLOWED_HOSTS: localhost,127.0.0.1,api
+      DATABASE_URL: postgres://${POSTGRES_USER:-all_in_django}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-all_in_django_test}
+    depends_on:
+      db:
+        condition: service_healthy
+    # healthcheck heredado de la imagen (ver HEALTHCHECK en Dockerfile).
+    ports:
+      - "${TEST_API_PORT:-8010}:8000"
+    restart: "no"
