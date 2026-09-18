@@ -7,6 +7,7 @@ name: CI
 #   lint -> test ------> build (build + arranque + pruebas HTTP con newman)
 #        -> test-postgres
 #        -> deploy-check
+#        -> terraform   (fmt + validate + test con proveedores simulados; sin credenciales)
 
 on:
   push:
@@ -37,6 +38,34 @@ jobs:
       # cambio de estilo global y merece su propio commit, no colarse en el CI.
       - name: ruff check
         run: ruff check --output-format=github .
+
+  terraform:
+    name: terraform fmt + validate + test
+    needs: lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      # Version FIJA, no `latest`: la version de Terraform cambia el comportamiento de
+      # `test` y del backend (use_lockfile exige >= 1.10). Misma que scripts/verificar.ps1.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.3"
+      - name: terraform fmt -check
+        run: terraform fmt -check -diff -recursive
+      # -backend=false: el estado vive en un bucket S3 que el CI no conoce ni necesita
+      # (no hay credenciales AWS en este workflow, a proposito: aqui no se aplica nada).
+      - name: terraform init (sin backend)
+        run: terraform init -backend=false -input=false
+      - name: terraform validate
+        run: terraform validate -no-color
+      # Pruebas con `mock_provider` (tests/*.tftest.hcl): evaluan el grafo entero con
+      # valores simulados y afirman lo que decide ESTE codigo (RDS privado, token de la
+      # UI en el cloud-init, image_tag distinto de latest...). Cero recursos de pago.
+      - name: terraform test
+        run: terraform test -no-color
 
   test:
     name: pytest + cobertura (SQLite)

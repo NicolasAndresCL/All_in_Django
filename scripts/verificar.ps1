@@ -11,7 +11,8 @@
 
 .PARAMETER Rapido
     Salta los pasos lentos: los dos con Docker (arranque del stack y pruebas HTTP de la
-    API) y la verificacion visual en navegador. Util mientras se itera.
+    API), la verificacion visual en navegador y el paso de Terraform si hay que correrlo
+    via Docker (con el binario en el PATH se ejecuta igual). Util mientras se itera.
 
 .EXAMPLE
     .\scripts\verificar.ps1
@@ -72,6 +73,34 @@ Ejecutar 'check --deploy (hardening)' {
     & $py manage.py check --deploy --fail-level WARNING
 }
 $env:DEBUG = 'True'; $env:SECURE_HTTPS = 'False'
+
+# 3b) Terraform: fmt + validate + test con proveedores simulados (mock_provider), igual que
+#     el job `terraform` del CI. Sin credenciales AWS y sin recursos de pago. Terraform no
+#     esta instalado en la maquina: si no esta en el PATH se usa la imagen oficial, con la
+#     MISMA version fija que el CI (1.16.3). Con el binario en el PATH dura segundos y se
+#     corre incluso con -Rapido; la via Docker se salta con -Rapido como los demas pasos.
+$tfDir = Join-Path $raiz 'infra\terraform'
+$tfVersion = '1.16.3'
+$tfLocal = Get-Command terraform -ErrorAction SilentlyContinue
+if ($tfLocal -or -not $Rapido) {
+Ejecutar 'terraform fmt + validate + test' {
+    if ($tfLocal) {
+        Push-Location $tfDir
+        try {
+            terraform fmt -check -diff -recursive; if ($LASTEXITCODE -ne 0) { return }
+            terraform init -backend=false -input=false; if ($LASTEXITCODE -ne 0) { return }
+            terraform validate -no-color; if ($LASTEXITCODE -ne 0) { return }
+            terraform test -no-color
+        } finally { Pop-Location }
+    } else {
+        # La imagen monta la carpeta y encadena los cuatro comandos con && (falla al primero).
+        docker run --rm -v "${tfDir}:/tf" -w /tf --entrypoint sh "hashicorp/terraform:$tfVersion" -c `
+            'terraform fmt -check -diff -recursive && terraform init -backend=false -input=false && terraform validate -no-color && terraform test -no-color'
+    }
+}
+} else {
+    Write-Host "  --  terraform fmt + validate + test (saltado por -Rapido: sin terraform en el PATH)" -ForegroundColor DarkGray
+}
 
 # 4) smoke: que el stack ARRANQUE, no solo que las imagenes compilen.
 if (-not $Rapido) {

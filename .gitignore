@@ -34,9 +34,10 @@ infra/observabilidad/token
 # env de docker compose (la plantilla .env.docker.example sí se versiona)
 .env.docker
 
-# IaC — estado y secretos de Terraform (los .tf y *.example SÍ se versionan)
+# IaC — estado y secretos de Terraform (los .tf y *.example SÍ se versionan).
+# El .terraform.lock.hcl SÍ se versiona: es el package-lock de los proveedores (mismo
+# proveedor en local y en el CI); lleva hashes de linux_amd64 y windows_amd64.
 infra/terraform/.terraform/
-infra/terraform/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfvars
