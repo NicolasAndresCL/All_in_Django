@@ -271,6 +271,16 @@ Detalles que conviene conocer antes de usarlos:
 - **Terraform**: el RDS lleva `skip_final_snapshot = false` con `final_snapshot_identifier`,
   `backup_retention_period` (7 días por defecto) y `deletion_protection`. Antes un `destroy`
   se llevaba la instancia **sin dejar copia**.
+- **Terraform**: `image_tag` **no tiene default y rechaza `latest`** (la misma regla que el
+  Jenkinsfile y el chart: GHCR nunca lo publica y el `docker compose pull` del cloud-init
+  moría en la primera EC2 sin más rastro que su log). Y el cloud-init **da de alta el
+  `api_token` en la base** y se lo pasa a la UI: sin él, el stack levantaba `healthy` con la
+  UI dando 401 en cada vista — el falso positivo que Compose corta con `${API_TOKEN:?}`.
+- **Terraform se prueba sin cuenta de AWS**: `terraform test` con proveedores simulados
+  (`tests/infra.tftest.hcl`) afirma que el RDS es privado y solo accesible desde la EC2,
+  que el cloud-init inyecta lo que el stack necesita y que las validaciones de entrada
+  abortan en el `plan`. Corre en el CI (job `terraform`) y en `verificar.ps1`. Ver el
+  [README de Terraform](infra/terraform/README.md#pruebas-sin-credenciales-terraform-test).
 
 ## Base de datos
 
@@ -635,7 +645,8 @@ pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term-missing
 
 # Todo lo que verifica el CI, en el mismo orden (correr ANTES de commitear):
 .\scripts\verificar.ps1
-.\scripts\verificar.ps1 -Rapido       # salta los dos pasos con Docker (lo más lento)
+.\scripts\verificar.ps1 -Rapido       # salta los pasos con Docker (lo más lento)
+# El paso de Terraform usa el binario si está en el PATH; si no, la imagen hashicorp/terraform.
 ```
 
 ### Lo que verifica el CI
@@ -649,6 +660,7 @@ algo que un lint de segundos ya iba a rechazar:
 | `test` | pytest en SQLite con **`--cov-fail-under=80`** (la cobertura es condición de fallo, no un número decorativo) y validación del **esquema OpenAPI** con `--fail-on-warn` |
 | `test-postgres` | la misma suite contra **Postgres 18 real** (servicio de Actions), con `-rs` para que los saltados sean visibles |
 | `deploy-check` | `manage.py check --deploy --fail-level WARNING` con `DEBUG=False` + `SECURE_HTTPS=True` y una `SECRET_KEY` efímera |
+| `terraform` | `fmt -check`, `init -backend=false`, `validate` y **`terraform test`** con proveedores simulados: RDS privado, token de la UI en el cloud-init, `image_tag` ≠ `latest`. Sin credenciales AWS ni recursos de pago |
 | `build` | construye ambas imágenes, **levanta el stack** esperando a que los tres servicios queden `healthy` y le **pasa la colección Postman con Newman** |
 
 El último es el que importa: un CI que solo comprueba que la imagen *compila* da falsa
