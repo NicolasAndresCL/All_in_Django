@@ -22,6 +22,15 @@ DEBUG=False
 ALLOWED_HOSTS=${allowed_hosts}
 DATABASE_URL=${database_url}
 EOF
+chmod 600 .env.docker
+
+# La UI solo necesita el token y la URL de la API: NO recibe .env.docker entero (ahí van
+# SECRET_KEY y la clave del RDS, que en el contenedor de la UI no pintan nada).
+cat > .env.ui <<EOF
+API_BASE=http://api:8000/api
+API_TOKEN=${api_token}
+EOF
+chmod 600 .env.ui
 
 # --- Compose de producción: imágenes de GHCR, sin Postgres (usa el RDS) ---
 cat > docker-compose.yml <<'EOF'
@@ -33,12 +42,29 @@ services:
     restart: unless-stopped
   ui:
     image: ghcr.io/${images_owner}/all-in-django-ui:${image_tag}
-    environment:
-      API_BASE: http://api:8000/api
+    env_file: .env.ui
     depends_on: [api]
     ports: ["8501:8501"]
     restart: unless-stopped
 EOF
 
 docker compose pull
-docker compose up -d
+# --wait: espera al HEALTHCHECK de las imágenes (migraciones aplicadas y gunicorn
+# respondiendo). Sin él, el paso siguiente correría contra una base a medio migrar.
+docker compose up -d --wait
+
+# --- Token de la UI en la base ---
+# La API exige IsAuthenticated: sin este token en la tabla authtoken el stack queda
+# 'healthy' con la UI dando 401 en cada vista (el falso positivo del 2026-08-18). Usuario
+# de servicio sin contraseña utilizable (solo sirve para el token) y token con la clave
+# que la UI ya tiene en .env.ui. Idempotente: reejecutar cloud-init no duplica ni rota.
+docker compose exec -T api python manage.py shell -c "
+from django.contrib.auth import get_user_model
+from rest_framework.authtoken.models import Token
+usuario, creado = get_user_model().objects.get_or_create(username='ui')
+if creado:
+    usuario.set_unusable_password()
+    usuario.save()
+Token.objects.filter(user=usuario).exclude(key='${api_token}').delete()
+Token.objects.get_or_create(user=usuario, defaults={'key': '${api_token}'})
+"

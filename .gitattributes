@@ -3,3 +3,7 @@
 .githooks/* text eol=lf
 docker/*.sh text eol=lf
 *.sh text eol=lf
+# La plantilla cloud-init es un script bash que Terraform lee del DISCO (templatefile) y
+# manda a la EC2 tal cual: con CRLF el shebang es "#!/bin/bash\r" y cloud-init no la
+# ejecuta. terraform test lo comprueba (tests/infra.tftest.hcl).
+infra/terraform/templates/*.tftpl text eol=lf

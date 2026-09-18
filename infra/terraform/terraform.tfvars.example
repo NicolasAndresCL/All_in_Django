@@ -9,9 +9,14 @@ secret_key = "cambia-esto-por-una-clave-larga-y-aleatoria"
 # Dominio o IP pública; usa "*" solo para pruebas.
 allowed_hosts = "*"
 
-# Owner de las imágenes en GHCR y tag a desplegar.
+# Token DRF con el que la UI llama a la API; cloud-init lo crea en la base (usuario 'ui').
+# Genera con: python -c "import secrets; print(secrets.token_hex(20))"
+api_token = "cambia-esto-por-40-hex"
+
+# Owner de las imágenes en GHCR y tag a desplegar. `latest` NO existe en GHCR (el CI solo
+# publica semver+sha): usa un tag real, p. ej. el último `git tag --list 'v*'`.
 images_owner = "nicolasandrescl"
-image_tag    = "latest"
+image_tag    = "v1.0.0"
 
 # Opcional: key pair EC2 para SSH y tu IP para restringir el acceso.
 # ssh_key_name     = "mi-keypair"

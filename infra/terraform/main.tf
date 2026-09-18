@@ -137,6 +137,7 @@ resource "aws_instance" "app" {
   user_data = templatefile("${path.module}/templates/cloud-init.sh.tftpl", {
     database_url  = local.database_url
     secret_key    = var.secret_key
+    api_token     = var.api_token
     allowed_hosts = var.allowed_hosts
     images_owner  = var.images_owner
     image_tag     = var.image_tag
