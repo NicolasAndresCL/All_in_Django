@@ -73,6 +73,12 @@ Ejecutar 'check --deploy (hardening)' {
     & $py manage.py check --deploy --fail-level WARNING
 }
 $env:DEBUG = 'True'; $env:SECURE_HTTPS = 'False'
+# La clave efimera NO puede quedar viva en la consola: Compose da prioridad al entorno del
+# shell sobre --env-file, asi que un `docker compose up` posterior en esta misma consola
+# arrancaria la API con esta clave y no con la de .env.docker, sin aviso (paso el
+# 2026-09-02 y el stack corrio 14 dias con una SECRET_KEY que no estaba en ningun archivo).
+# Se limpian tambien ALLOWED_HOSTS y DATABASE_URL por el mismo motivo.
+Remove-Item Env:SECRET_KEY, Env:ALLOWED_HOSTS, Env:DATABASE_URL -ErrorAction SilentlyContinue
 
 # 3b) Terraform: fmt + validate + test con proveedores simulados (mock_provider), igual que
 #     el job `terraform` del CI. Sin credenciales AWS y sin recursos de pago. Terraform no
