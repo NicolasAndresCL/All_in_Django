@@ -68,4 +68,10 @@ services:
     restart: unless-stopped
 
 volumes:
+  # Mismo volumen y misma regla que en docker-compose.yml: external, creado UNA vez con
+  # `docker volume create all_in_django_pgdata`, para que ningun `down -v` (ni un rollback
+  # torpe del Jenkinsfile) pueda llevarse la base. Los dos compose comparten proyecto y
+  # volumen: el despliegue reemplaza los contenedores, nunca los datos.
   pgdata:
+    name: all_in_django_pgdata
+    external: true

@@ -4,11 +4,18 @@
 # Usa siempre --env-file .env.docker (evita que compose lea el .env de Django de la raiz,
 # cuyo SECRET_KEY con '$' dispara warnings de interpolacion):
 #
+#   docker volume create all_in_django_pgdata       # UNA vez por maquina (volumen external)
 #   docker compose --env-file .env.docker up -d     # db -> api -> ui (en orden por health)
 #   docker compose --env-file .env.docker logs -f api
 #   docker compose --env-file .env.docker down      # conserva el volumen pgdata
 #
 # Respaldo / restauracion de la base:  scripts\respaldar_bd.ps1 · scripts\restaurar_bd.ps1
+#
+# OJO al lanzar `up` desde una consola donde antes corrio scripts/verificar.ps1 (o cualquier
+# script que exporte SECRET_KEY): Compose da prioridad al entorno del shell sobre --env-file,
+# asi que la API arrancaria con una clave distinta a la de .env.docker sin ningun aviso
+# (paso el 2026-09-02: 14 dias con una clave efimera de 86 chars). Comprobar antes:
+#   PowerShell:  $env:SECRET_KEY   (debe estar vacio)
 
 # Nombre de proyecto FIJADO en el archivo (no derivado del directorio ni de -p): dev y
 # despliegue (docker-compose.deploy.yml) comparten proyecto, asi que `up` es idempotente
@@ -119,4 +126,13 @@ services:
     restart: unless-stopped
 
 volumes:
+  # `external: true`: el volumen lo crea uno a mano y Compose NUNCA lo borra, ni con
+  # `down -v` ni con `down --volumes --remove-orphans`. Es la diferencia entre "sobrevive a
+  # un down" (cualquier volumen nombrado) y "sobrevive a un dedo torpe" (solo un external).
+  # El coste es un paso unico por maquina:  docker volume create all_in_django_pgdata
+  # Sin el, `up` falla ruidoso con "external volume not found" en vez de crear uno vacio
+  # y arrancar la API contra una base en blanco. El nombre va explicito porque un volumen
+  # external no hereda el prefijo del proyecto.
   pgdata:
+    name: all_in_django_pgdata
+    external: true

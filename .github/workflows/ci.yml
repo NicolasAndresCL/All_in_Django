@@ -205,6 +205,13 @@ jobs:
       - name: Build de las imagenes
         run: docker compose --env-file .env.docker build
 
+      # El volumen de la base es `external: true` en el compose (Compose no lo crea ni lo
+      # borra; protege la base local de un `down -v`). Aqui es efimero y hay que crearlo a
+      # mano, igual que en cualquier maquina nueva: sin este paso `up` falla con
+      # "external volume not found". Mismo nombre que en el compose, no el del proyecto.
+      - name: Crear el volumen external de la base
+        run: docker volume create all_in_django_pgdata
+
       - name: Levantar el stack
         run: docker compose --env-file .env.docker up -d --no-build
 
@@ -259,6 +266,9 @@ jobs:
           docker compose --env-file .env.docker ps -a
           docker compose --env-file .env.docker logs --tail=60
 
+      # `down -v` ya no toca el volumen external (esa es la gracia): se borra aparte.
       - name: Limpiar
         if: always()
-        run: docker compose --env-file .env.docker down -v || true
+        run: |
+          docker compose --env-file .env.docker down -v || true
+          docker volume rm all_in_django_pgdata || true

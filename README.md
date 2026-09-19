@@ -92,11 +92,18 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 
 ```bash
 cp .env.docker.example .env.docker   # SECRET_KEY, POSTGRES_* y API_TOKEN son OBLIGATORIOS
+docker volume create all_in_django_pgdata        # UNA vez por máquina: el volumen es external
 docker compose --env-file .env.docker up -d      # db (healthy) → api (migra) → ui
 ```
 
 > Se pasa `--env-file .env.docker` para que Compose no lea el `.env` de Django (su `SECRET_KEY`
 > con `$` provoca warnings de interpolación inofensivos).
+>
+> ⚠️ **El entorno del shell manda sobre `--env-file`.** Si en esa misma consola corrió antes
+> `scripts/verificar.ps1` (o cualquier script que exporte `SECRET_KEY`), Compose usa la del
+> shell y la API arranca con una clave que no está en ningún archivo, sin aviso. Pasó el
+> 2026-09-02 y el stack corrió 14 días así. `verificar.ps1` ya limpia la variable al terminar;
+> antes de un `up`, `$env:SECRET_KEY` debe estar vacío.
 
 - API/Admin: `http://localhost:8000/` · healthcheck `http://localhost:8000/healthz/`
 - UI NiceGUI: `http://localhost:8501/`
@@ -122,8 +129,33 @@ real contra la base), la UI que su servidor responde.
 
 #### El volumen y la trampa de Postgres 18
 
-Los datos viven en el volumen **`all_in_django_pgdata`**. `docker compose down` (sin `-v`) los
-conserva; solo `down -v` los borra.
+Los datos viven en el volumen **`all_in_django_pgdata`**, declarado **`external: true`** en
+los dos compose (desde el 2026-09-19). Eso cambia quién puede borrarlo:
+
+| Operación | Volumen nombrado normal | Volumen `external` |
+|---|---|---|
+| `docker compose down` | sobrevive | sobrevive |
+| `docker compose down -v` | **se borra** | sobrevive (Compose no lo gestiona) |
+| `docker volume rm` / *Clean data* de Docker Desktop | se borra | se borra |
+
+El precio es un paso único por máquina: `docker volume create all_in_django_pgdata`. Sin él,
+`up` falla ruidoso con *external volume not found* en vez de crear uno vacío y levantar la API
+contra una base en blanco. En el host de Jenkins ya existe (es el mismo volumen que usa
+`docker-compose.deploy.yml`).
+
+Verificado el 2026-09-19 con un `down` → `up` real: mismas 17 tablas, mismos conteos fila a
+fila (`COUNT(*)`), mismo OID de base. Además del dump lógico, quedó un **respaldo físico del
+volumen** (1.368 ficheros, 8,1 MB) tomado con la base parada:
+
+```powershell
+docker compose --env-file .env.docker down          # la base tiene que estar parada
+docker run --rm -v all_in_django_pgdata:/datos:ro -v C:\dev\backups:/respaldo alpine `
+    sh -c "tar -czf /respaldo/all_in_django_pgdata_$(Get-Date -f yyyy-MM-dd).tgz -C /datos ."
+docker compose --env-file .env.docker up -d
+```
+
+El `.tgz` solo sirve para la **misma versión mayor** de Postgres; para cualquier otra cosa, el
+dump `-Fc` de abajo.
 
 ⚠️ **`postgres:18` cambió el layout de datos** respecto a la 16:
 
