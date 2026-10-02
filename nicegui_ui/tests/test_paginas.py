@@ -47,6 +47,8 @@ async def test_tareas(user: User) -> None:
         await user.open("/tareas")
         await user.should_see("Tareas Totales")
         await user.should_see("Nueva tarea")
+        await user.should_see("Analítica")
+        await user.should_see("+2.00 h/sem")          # tendencia de tareas/analitica/
 
 
 async def test_notas(user: User) -> None:

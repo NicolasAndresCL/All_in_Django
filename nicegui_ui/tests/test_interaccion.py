@@ -135,7 +135,7 @@ async def test_filtrar_por_proyecto_deja_fuera_los_demas(user: User) -> None:
     }]
 
     def tareas_en_pantalla() -> set[str]:
-        (registros,) = user.find(kind=ui.table).elements
+        (registros,) = user.find(kind=ui.table, marker="registros").elements
         return {fila["tarea"] for fila in registros.rows}
 
     with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
@@ -179,3 +179,38 @@ async def test_elegir_un_tema_lo_guarda_para_este_usuario(user: User) -> None:
 
         assert app.storage.user["tema"] == clave
         assert t.tema_elegido() == clave  # y la funcion que lee la eleccion lo ve
+
+
+# ─── Tareas · informe PDF (seaborn, generado en la API) ──────────────────────
+async def test_boton_informe_pide_el_pdf_a_la_api(user: User) -> None:
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        mock_api(rsps)
+        rsps.get(f"{BASE}/tareas/informe/", body=b"%PDF-1.4 falso", content_type="application/pdf")
+
+        await user.open("/tareas")
+        user.find("Informe PDF").click()
+        await asyncio.sleep(0.1)
+
+        assert [c for c in rsps.calls if c.request.url.endswith("/tareas/informe/")]
+
+
+async def test_informe_fallido_avisa_en_vez_de_descargar(user: User) -> None:
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        mock_api(rsps)
+        rsps.get(f"{BASE}/tareas/informe/", status=500)
+
+        await user.open("/tareas")
+        user.find("Informe PDF").click()
+        await user.should_see("No se pudo generar el informe")
+
+
+async def test_sin_tendencia_explica_cuantas_semanas_faltan(user: User) -> None:
+    """Con `tendencia: null` la vista dice POR QUÉ (los requisitos vienen de la API)."""
+    from datos_api import ANALITICA
+
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        rsps.get(f"{BASE}/tareas/analitica/", json={**ANALITICA, "tendencia": None, "atipicos": []})
+        mock_api(rsps)
+        await user.open("/tareas")
+        await user.should_see("al menos 4 semanas")
+        await user.should_see("a partir de 10 días")

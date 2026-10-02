@@ -8,6 +8,7 @@ dibuja con `ui.plotly`.
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 def construir_figuras(resumen: dict, template: str = "plotly_dark") -> dict:
@@ -64,3 +65,27 @@ def construir_figuras(resumen: dict, template: str = "plotly_dark") -> dict:
     figs["dia_semana"] = fig
 
     return figs
+
+
+# Paleta categórica validada (skill dataviz): la serie real conserva el azul del resto del
+# dashboard y la recta de tendencia lleva el segundo tono, distinguible también con CVD.
+COLOR_REAL, COLOR_TENDENCIA = "#0e639c", "#eb6834"
+
+
+def figura_tendencia(tendencia: dict | None, template: str = "plotly_dark"):
+    """Barras de horas por semana + la recta de `LinearRegression` de `tareas/analitica/`.
+
+    Dibuja el `ajuste` que ya calculó la API (no reajusta nada en el cliente). Dos series
+    → leyenda visible. `None` si la API no devolvió tendencia (pocas semanas).
+    """
+    if not tendencia or not tendencia.get("ajuste"):
+        return None
+    df = pd.DataFrame(tendencia["ajuste"]).assign(semana=lambda d: pd.to_datetime(d["semana"]))
+    fig = go.Figure([
+        go.Bar(x=df["semana"], y=df["horas"], name="Horas reales", marker_color=COLOR_REAL),
+        go.Scatter(x=df["semana"], y=df["ajustada"], name="Tendencia lineal", mode="lines",
+                   line=dict(color=COLOR_TENDENCIA, width=2)),
+    ])
+    fig.update_layout(template=template, height=300, yaxis_title="Horas", xaxis_title="Semana (lunes)",
+                      legend=dict(orientation="h", y=1.1), margin=dict(t=30))
+    return fig

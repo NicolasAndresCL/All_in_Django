@@ -15,11 +15,14 @@ nicegui_ui/
 │                       #   (metric_card, tabla con scroll, grafico con fullscreen)
 ├── api_client.py      # cliente HTTP (CRUD, acciones, export, upload, download, paginación)
 ├── charts.py          # construir_figuras: las 6 figuras Plotly del dashboard (función pura)
+│                       #   + figura_tendencia: barras semanales + recta de tareas/analitica/
 ├── gantt.py           # Gantt Plotly (personal + equipo)
 ├── apagado.py         # apagado/reinicio programado del PC local (envuelve shutdown.exe)
 ├── static/fondos/     # personajes con alfa reconstruido (+ mini/ para la banda)
 ├── views/             # una vista por dominio: inicio, calendario, liveops, tareas,
-│                       #   notas, tv, apagado
+│                       #   notas, tv, apagado. Tareas incluye la sección Analítica
+│                       #   (tendencia + días atípicos, calculados en la API con
+│                       #   scikit-learn) y el botón "Informe PDF" (seaborn, en la API)
 ├── tests/             # nicegui.testing User + responses (páginas), cliente, charts, gantt
 ├── Dockerfile  run_ui.py  run_app.bat  requirements.txt
 ```

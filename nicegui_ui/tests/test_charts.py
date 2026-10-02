@@ -1,6 +1,6 @@
 """Tests de las figuras del dashboard de Tareas (charts.py, sin runtime de UI)."""
 
-from nicegui_ui.charts import construir_figuras
+from nicegui_ui.charts import construir_figuras, figura_tendencia
 
 # Resumen con la forma que devuelve /api/tareas/resumen/.
 RESUMEN = {
@@ -38,3 +38,16 @@ def test_sin_dias_las_figuras_temporales_son_none():
     assert figs["esfuerzo"] is not None
     assert figs["dia_semana"] is not None
     assert figs["semanal"] is not None
+
+
+def test_figura_tendencia_dibuja_real_y_recta_con_leyenda():
+    tendencia = {"ajuste": [{"semana": "2026-06-01", "horas": 10.0, "ajustada": 9.5},
+                            {"semana": "2026-06-08", "horas": 12.0, "ajustada": 12.5}]}
+    fig = figura_tendencia(tendencia)
+    assert [t.name for t in fig.data] == ["Horas reales", "Tendencia lineal"]
+    assert list(fig.data[1].y) == [9.5, 12.5]
+
+
+def test_figura_tendencia_none_sin_datos():
+    assert figura_tendencia(None) is None
+    assert figura_tendencia({"ajuste": []}) is None

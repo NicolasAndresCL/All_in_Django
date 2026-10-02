@@ -1,11 +1,11 @@
-"""Vista de Registro de Tareas: dashboard (6 métricas + 6 gráficos), CRUD y filtro."""
+"""Vista de Registro de Tareas: dashboard (6 métricas + 6 gráficos), analítica, CRUD y filtro."""
 
 from datetime import date
 
 from nicegui import ui
 
 from nicegui_ui.api_client import APIError, get_client
-from nicegui_ui.charts import construir_figuras
+from nicegui_ui.charts import construir_figuras, figura_tendencia
 from nicegui_ui.layout import (
     aviso,
     banner_error,
@@ -29,6 +29,8 @@ FIGURAS = [
     ("dia_semana", "Actividad por Día de la Semana"),
     ("acumulado", "Progreso Acumulado"),
 ]
+
+FLECHA = {"sube": "▲ sube", "baja": "▼ baja", "estable": "▬ estable"}
 
 
 def render() -> None:
@@ -84,6 +86,49 @@ def render() -> None:
                         else:
                             ui.label("Sin datos suficientes.").classes("text-xs text-gray-500")
 
+        # ----------------------------------------------- analítica (sklearn)
+        @ui.refreshable
+        def analitica() -> None:
+            # El modelo vive en la API (`tareas/analitica/`); aquí solo se dibuja. La UI no
+            # importa scikit-learn: su imagen no carga los ~400 MB que sumaron a la de la API.
+            with ui.row().classes("items-center gap-3"):
+                ui.label("Analítica").classes("text-lg font-medium")
+                ui.button("Informe PDF", icon="picture_as_pdf", on_click=descargar_informe).props("flat")
+            try:
+                datos = api.action("tareas", "analitica")
+            except APIError as exc:
+                banner_error(f"No se pudo cargar la analítica: {exc}")
+                return
+            req = datos["requisitos"]
+            tend = datos["tendencia"]
+            if tend is None:
+                aviso(f"Se necesitan al menos {req['min_semanas']} semanas de registros "
+                      "para estimar una tendencia.")
+            else:
+                with ui.row().classes("gap-3 flex-wrap"):
+                    metric_card("Tendencia", f"{tend['pendiente']:+.2f} h/sem",
+                                extra=FLECHA[tend["direccion"]])
+                    metric_card("Próxima semana (proyección)", f"{tend['proyeccion']:.1f} h")
+                    metric_card("Ajuste R²", f"{tend['r2']:.2f}")
+                with ui.card().classes("p-3 w-full"):
+                    ui.label("Horas semanales y tendencia lineal").classes("font-medium")
+                    grafico(figura_tendencia(tend, PLOTLY_TEMPLATE))
+
+            ui.label("Días atípicos (IsolationForest)").classes("font-medium")
+            if datos["atipicos"]:
+                tabla(datos["atipicos"], alto=240).mark("atipicos")
+            else:
+                aviso(f"Sin días atípicos (se analizan a partir de {req['min_dias']} días "
+                      "con registros).")
+
+        def descargar_informe() -> None:
+            try:
+                contenido, _ = api.download("tareas/informe/")
+            except APIError as exc:
+                notificar_error(f"No se pudo generar el informe: {exc}")
+                return
+            ui.download(contenido, "informe_tareas.pdf")
+
         # ------------------------------------------------ listado con filtro
         @ui.refreshable
         def listado() -> None:
@@ -102,7 +147,9 @@ def render() -> None:
                 .classes("w-64")
             registros = _filtrados(estado)
             if registros:
-                tabla(registros)
+                # Marcador: la página tiene DOS ui.table (atípicos y registros); los tests
+                # buscan esta por nombre, no por posición.
+                tabla(registros).mark("registros")
             else:
                 aviso("Sin registros para el filtro actual.")
 
@@ -209,6 +256,7 @@ def render() -> None:
         def recargar_todo() -> None:
             cargar_datos()
             dashboard.refresh()
+            analitica.refresh()
             listado.refresh()
             alta.refresh()
             borrar.refresh()
@@ -216,6 +264,8 @@ def render() -> None:
         # ------------------------------------------------------- página
         cargar_datos()
         dashboard()
+        ui.separator()
+        analitica()
         ui.separator()
         listado()
         ui.separator()

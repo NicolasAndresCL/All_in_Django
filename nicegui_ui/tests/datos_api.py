@@ -38,6 +38,16 @@ RESUMEN = {
                        ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes",
                         "Sábado", "Domingo"]],
 }
+ANALITICA = {
+    "tendencia": {
+        "semanas": 4, "pendiente": 2.0, "r2": 1.0, "proyeccion": 18.0, "direccion": "sube",
+        "ajuste": [{"semana": f"2026-06-{d:02d}", "horas": h, "ajustada": h}
+                   for d, h in [(8, 10.0), (15, 12.0), (22, 14.0), (29, 16.0)]],
+    },
+    "atipicos": [{"fecha": "2026-06-30", "horas": 20.0, "registros": 9, "puntaje": -0.12,
+                  "motivo": "más registros de lo habitual"}],
+    "requisitos": {"min_semanas": 4, "min_dias": 10},
+}
 CANALES = {"total": 1, "canales": [
     {"name": "TVN Chile", "url": "https://x.cl", "logo": "https://x.cl/a.png"},
 ]}
@@ -50,6 +60,7 @@ def mock_api(rsps: responses.RequestsMock, *, tareas: list[dict] | None = None) 
     rsps.get(f"{BASE}/turnos-personales/", json=TURNOS_PERSONALES)
     rsps.get(f"{BASE}/turnos-equipo/", json=TURNOS_EQUIPO)
     rsps.get(f"{BASE}/tareas/resumen/", json=RESUMEN)
+    rsps.get(f"{BASE}/tareas/analitica/", json=ANALITICA)
     rsps.get(f"{BASE}/tareas/", json=TAREAS if tareas is None else tareas)
     rsps.get(f"{BASE}/notas/", json=NOTAS)
     rsps.get(f"{BASE}/tv/canales/", json=CANALES)
