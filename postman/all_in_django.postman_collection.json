@@ -2059,7 +2059,7 @@
     },
     {
       "name": "04 - Registro de tareas",
-      "description": "`duracion` es un DurationField: viaja como `\"HH:MM:SS\"` y `horas` es una propiedad derivada. `resumen/` es el dashboard entero calculado en el backend.",
+      "description": "`duracion` es un DurationField: viaja como `\"HH:MM:SS\"` y `horas` es una propiedad derivada. `resumen/` es el dashboard entero calculado en el backend. `analitica/` (scikit-learn) e `informe/` (PDF con seaborn) usan el mismo DataFrame que el resumen.",
       "item": [
         {
           "name": "Crear tarea (1 h 30)",
@@ -2271,6 +2271,99 @@
                   "    const b = pm.response.json();",
                   "    ['por_proyecto', 'por_tarea', 'por_dia', 'por_semana', 'por_dia_semana']",
                   "        .forEach(function (k) { pm.expect(b[k]).to.be.an('array'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Analitica (scikit-learn)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/analitica/?proyecto=POSTMAN-SMOKE",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "analitica",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "proyecto",
+                  "value": "POSTMAN-SMOKE"
+                }
+              ]
+            },
+            "description": "LinearRegression sobre horas semanales + IsolationForest sobre los dias. Con 2 tareas en 2 dias no alcanza los minimos (4 semanas / 10 dias): lo correcto es tendencia null y atipicos vacio, no un modelo ajustado a dos puntos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Trae tendencia, atipicos y requisitos', function () {",
+                  "    pm.expect(pm.response.json()).to.have.all.keys('tendencia', 'atipicos', 'requisitos');",
+                  "});",
+                  "pm.test('Con 2 dias NO ajusta modelos (minimos de datos)', function () {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.tendencia).to.eql(null);",
+                  "    pm.expect(b.atipicos).to.eql([]);",
+                  "    pm.expect(b.requisitos.min_semanas).to.be.above(1);",
+                  "    pm.expect(b.requisitos.min_dias).to.be.above(2);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Informe PDF (seaborn)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/tareas/informe/?proyecto=POSTMAN-SMOKE",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tareas",
+                "informe",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "proyecto",
+                  "value": "POSTMAN-SMOKE"
+                }
+              ]
+            },
+            "description": "PDF renderizado en el servidor: graficos estaticos de seaborn (matplotlib sin pyplot) + tabla de atipicos."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "pm.test('Descarga un PDF de verdad', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf');",
+                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    pm.expect(pm.response.text().substring(0, 5)).to.eql('%PDF-');",
                   "});"
                 ]
               }

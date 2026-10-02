@@ -39,6 +39,11 @@ RUN mkdir -p /tmp/prometheus \
     && chown -R app:app /app /tmp/prometheus
 USER app
 
+# Cache de fuentes de matplotlib (seaborn) construida en BUILD, como el usuario que la
+# usara: si no, el primer informe PDF de cada contenedor la genera en mitad de la peticion
+# (varios segundos) y cada worker de gunicorn compite por escribirla.
+RUN python -c "import matplotlib.font_manager"
+
 EXPOSE 8000
 
 # Readiness real (/healthz/ hace SELECT 1), no "el proceso sigue vivo". Vive en la IMAGEN

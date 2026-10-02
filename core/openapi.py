@@ -165,6 +165,42 @@ class ResumenTareasSerializer(serializers.Serializer):
     por_dia_semana = SerieDiaSemanaSerializer(many=True)
 
 
+class PuntoAjusteSerializer(serializers.Serializer):
+    semana = serializers.DateField(help_text="Lunes de la semana.")
+    horas = serializers.FloatField(help_text="Horas reales (0 si la semana no tuvo registros).")
+    ajustada = serializers.FloatField(help_text="Horas que predice la recta de regresion.")
+
+
+class TendenciaSerializer(serializers.Serializer):
+    semanas = serializers.IntegerField()
+    pendiente = serializers.FloatField(help_text="Horas por semana que sube (+) o baja (-) la tendencia.")
+    r2 = serializers.FloatField(help_text="Coeficiente de determinacion del ajuste (0-1).")
+    proyeccion = serializers.FloatField(help_text="Horas estimadas para la semana siguiente (>= 0).")
+    direccion = serializers.ChoiceField(choices=["sube", "baja", "estable"])
+    ajuste = PuntoAjusteSerializer(many=True)
+
+
+class DiaAtipicoSerializer(serializers.Serializer):
+    fecha = serializers.DateField()
+    horas = serializers.FloatField()
+    registros = serializers.IntegerField()
+    puntaje = serializers.FloatField(help_text="decision_function del IsolationForest: < 0 = atipico.")
+    motivo = serializers.CharField()
+
+
+class RequisitosAnaliticaSerializer(serializers.Serializer):
+    min_semanas = serializers.IntegerField()
+    min_dias = serializers.IntegerField()
+
+
+class AnaliticaTareasSerializer(serializers.Serializer):
+    """Salida de `tareas/analitica/` (scikit-learn). `tendencia` es null con pocas semanas."""
+
+    tendencia = TendenciaSerializer(allow_null=True)
+    atipicos = DiaAtipicoSerializer(many=True)
+    requisitos = RequisitosAnaliticaSerializer()
+
+
 class CanalSerializer(serializers.Serializer):
     name = serializers.CharField()
     url = serializers.URLField()
