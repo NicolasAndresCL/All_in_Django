@@ -9,7 +9,8 @@ tests con **pytest-django**.
 
 ## Stack
 
-Python 3.14 · Django 6 · DRF · pydantic-settings · pandas/openpyxl · requests/beautifulsoup4 ·
+Python 3.14 · Django 6 · DRF · pydantic-settings · **pandas · NumPy · scikit-learn · seaborn** ·
+openpyxl · requests/beautifulsoup4 ·
 fpdf2 · selenium · cachetools · dj-database-url · psycopg · gunicorn · whitenoise. Base de datos:
 **SQLite** (`db.sqlite3`) por defecto, o **PostgreSQL** vía `DATABASE_URL` (ver
 [Base de datos](#base-de-datos)). Despliegue declarativo: **Docker Compose · GitHub Actions ·
@@ -33,7 +34,7 @@ all_in_django/
 ├── apps/
 │   ├── calendario/          # Clase, TurnoPersonal
 │   ├── liveops/             # TurnoEquipo (+ importar CSV/Excel + normalizar_turnos)
-│   ├── tareas/              # Registro (+ resumen)
+│   ├── tareas/              # Registro (+ resumen pandas, analitica sklearn, informe seaborn)
 │   ├── notas/               # Nota (+ exportar md/txt)
 │   ├── tv/                  # scraper de canales (solo lectura)
 │   └── extras/              # commands: importar_all_in_one, reloj, login_menu
@@ -404,6 +405,8 @@ los enlaces `next` (así lo hace `nicegui_ui/api_client.py`).
 | `/api/turnos-equipo/imprimir/?semana_inicio=` | GET | PDF con formato de turnos del equipo |
 | `/api/tareas/` | CRUD | `?proyecto=` |
 | `/api/tareas/resumen/` | GET | dashboard: racha de días, promedios y series (por día/semana/proyecto/tarea) |
+| `/api/tareas/analitica/` | GET | **scikit-learn**: tendencia semanal (`LinearRegression`) y días atípicos (`IsolationForest`) · `?proyecto=` |
+| `/api/tareas/informe/` | GET | **PDF con gráficos seaborn**: KPIs, tendencia, horas por proyecto, mapa de calor y atípicos · `?proyecto=` |
 | `/api/notas/` | CRUD | |
 | `/api/notas/{id}/exportar/?fmt=md\|txt` | GET | descarga la nota |
 | `/api/tv/canales/?buscar=` | GET | canales (scraping, cache 1h) |
@@ -464,6 +467,61 @@ locales, así que en la petición *Importar CSV* hay que volver a seleccionar
 > Si la corres contra un entorno con datos reales, usa solo las carpetas de lectura. Las de
 > escritura marcan todo lo que crean (`POSTMAN-SMOKE`, semanas de 2099) y lo borran al final,
 > pero un fallo a medio camino deja residuos.
+
+## Ciencia de datos (pandas · NumPy · scikit-learn · seaborn)
+
+El módulo de **Registro de Tareas** pasa de "sumar en bucles" a una capa de datos declarativa.
+Todo parte de **un solo `DataFrame`** (`apps/tareas/services.registros_a_frame`, que con un
+QuerySet usa `values_list` y no instancia un modelo por fila) y lo consumen tres piezas:
+
+| Pieza | Librería | Qué hace |
+|---|---|---|
+| `services.calcular_resumen` → `/resumen/` | **pandas** + **NumPy** | cada serie del dashboard es un `groupby(...).sum()` encadenado; la racha se vectoriza con `np.diff` |
+| `analitica.py` → `/analitica/` | **scikit-learn** | `LinearRegression` sobre las horas por semana (pendiente, R², proyección) y `Pipeline(StandardScaler → IsolationForest)` sobre los días |
+| `informe.py` → `/informe/` | **seaborn** (`seaborn.objects`) + fpdf2 | PDF con gráficos estáticos renderizados en el servidor |
+
+La importación de LiveOps (`apps/liveops/services.preparar_turnos_equipo`) también dejó
+`iterrows()`: cada validación es una máscara booleana y los errores salen de una tabla
+condición → mensaje con `np.select`.
+
+**Cómo se comprobó que la refactorización no cambia nada.** Además de los tests de siempre,
+las dos funciones se compararon contra su versión anterior (sacada de `git`) con datos
+aleatorios: 300 conjuntos para el resumen (297 idénticos al bit; los 3 restantes difieren en
+una centésima por redondear un `.xx5` exacto —pandas suma por pares, `sum()` en secuencia—) y
+400 DataFrames con casos límite para la importación. Esa comparación destapó un **bug de la
+versión anterior**: con la columna `Fecha` en `datetime64` (lo normal al leer un Excel),
+`iterrows()` convertía una celda de agente vacía en `NaT` y se importaba un turno a nombre del
+trabajador *"NaT"*. Ahora se reporta como `Fila N: sin agente.` y tiene test de regresión.
+
+**Decisiones del modelo** (medidas sobre la base real: 443 registros, 169 días, 25 semanas):
+
+- **Mínimos de datos** — 4 semanas para la tendencia y 10 días para los atípicos. Por debajo
+  la API devuelve `tendencia: null` / `atipicos: []` y la UI explica cuánto falta: una recta
+  por dos puntos tiene R² = 1 y no dice nada.
+- **Semanas vacías = 0 horas** (se reindexa el rango completo): si se omitieran, una pausa de
+  un mes no movería la tendencia.
+- **`contamination=0.05`** — con `"auto"` el IsolationForest marcaba **48 de 169 días (28 %)**;
+  con el 5 % salen 9. Contrapartida asumida: siempre aparece alguno, así que responde *"¿cuáles
+  son mis días más raros?"*, no *"¿hay algo raro?"*. `random_state` fijo para que la lista no
+  cambie entre recargas.
+- **`motivo`** lo decide el rasgo más desviado (z-score): un día con horas normales pero 9
+  registros es raro por los registros, y decir "menos horas de lo habitual" explicaba mal lo
+  que vio el modelo.
+
+**Gráficos del informe.** Paleta categórica validada (azul para la serie real, naranja para la
+tendencia, leyenda solo con dos series), rampa secuencial de un solo tono en el mapa de calor,
+proyectos más allá del 8.º plegados en "Otros" y nombres largos truncados. Se usa
+`matplotlib.figure.Figure` directamente, **nunca `pyplot`**: pyplot guarda las figuras en
+estado global del proceso y en un worker de gunicorn eso es una fuga (un test mira el registro
+de pyplot tras generar un informe, y se comprobó que falla si se reintroduce). Con la base real
+tarda ~1,3 s y pesa ~130 KB. La imagen de la API precalienta la caché de fuentes de matplotlib
+en el build para que el primer informe no la construya en mitad de una petición.
+
+La UI **no** importa scikit-learn ni seaborn: pide `/analitica/` (tarjetas de tendencia, gráfico
+Plotly con la recta y tabla de atípicos) y descarga `/informe/` con el botón *Informe PDF*.
+
+**Coste:** la imagen de la API pasó de 642 MB a **1,04 GB** (scikit-learn, scipy, matplotlib y
+seaborn). La de la UI no cambia.
 
 ## Observabilidad
 
@@ -710,7 +768,9 @@ arranquen tres contenedores. Se activa una sola vez con `git config core.hooksPa
 > estilo global que merece su propio commit, no colarse en una refactorización de
 > infraestructura.
 
-236 tests en total: backend (Django + DRF, incl. dashboard/racha de tareas, PDFs de
+284 tests en total (sin contar los de marca `visual`): backend (Django + DRF, incl.
+dashboard/racha de tareas, **analítica con scikit-learn e informe seaborn**
+—`apps/tareas/test_analitica.py`—, PDFs de
 impresión, copiar semanas, **upsert** de turnos y healthcheck `/healthz/`) + **contrato de la
 API** (`test_contrato_api.py`: compara el esquema OpenAPI con la colección Postman y falla si
 un endpoint no tiene ni una petición que lo visite — es lo que impide que la colección
@@ -746,7 +806,7 @@ Queda fuera del `pytest` normal y del CI porque exige descargar el navegador (~1
 
 ```powershell
 python -m playwright install chromium   # una vez
-pytest -m visual                        # también lo corre scriptserificar.ps1
+pytest -m visual                        # también lo corre scripts\verificar.ps1
 ```
 
 **Cobertura ~83%** (coverage.py); los serializers de turnos, con el upsert, quedan al 100%.
