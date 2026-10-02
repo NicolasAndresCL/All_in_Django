@@ -41,6 +41,44 @@ def test_preparar_turnos_equipo():
     assert manu["es_libre"] and manu["entrada"] is None
 
 
+def test_agente_vacio_con_fechas_datetime_no_se_importa_como_nat():
+    """Regresión: con `Fecha` en datetime64 (lo normal al leer un Excel), `iterrows()`
+    convertía el NaN de una celda de agente vacía en `NaT`, que el chequeo no veía como
+    vacío: se importaba un turno a nombre del trabajador "NaT"."""
+    from datetime import datetime
+
+    df = pd.DataFrame({
+        "Fecha": [datetime(2026, 6, 1), datetime(2026, 6, 2)],
+        "Agente": ["Manu", float("nan")],
+        "Entrada": ["13:00", "13:00"], "Salida": ["22:00", "22:00"],
+    })
+    filas, resumen, errores = services.preparar_turnos_equipo(df)
+    assert resumen["agentes"] == ["Manu"]
+    assert errores == ["Fila 3: sin agente."]
+
+
+def test_errores_en_orden_de_fila_y_tipos_nativos():
+    """Los errores salen en el orden del archivo, con fecha mixta parseada celda a celda;
+    las filas llevan `date`/`time`/`bool` de Python (no numpy) para el ORM."""
+    from datetime import date
+
+    df = pd.DataFrame({
+        "Fecha": ["no-es-fecha", None, "02/06/2026", "2026-06-03"],
+        "Agente": ["Manu", "Jorge", "Babi", None],
+        "Entrada": ["09:00"] * 4, "Salida": ["18:00"] * 4,
+    })
+    filas, _, errores = services.preparar_turnos_equipo(df)
+    assert errores == ["Fila 2: fecha inválida ('no-es-fecha').", "Fila 3: sin fecha.", "Fila 5: sin agente."]
+    (babi,) = filas
+    assert babi["semana_inicio"] == date(2026, 2, 2) and babi["dia"] == "Viernes"  # 02/06 = 6 de febrero (mes primero)
+    assert type(babi["es_libre"]) is bool and type(babi["semana_inicio"]) is date
+
+
+def test_preparar_archivo_sin_filas():
+    df = pd.DataFrame({"Fecha": [], "Agente": [], "Entrada": [], "Salida": []})
+    assert services.preparar_turnos_equipo(df) == ([], {"filas": 0, "agentes": [], "semanas": []}, [])
+
+
 # ─── modelo + guardar ────────────────────────────────────────────────────────
 @pytest.mark.django_db
 def test_guardar_turnos_calcula_y_no_duplica():

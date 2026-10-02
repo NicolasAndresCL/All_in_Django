@@ -12,10 +12,11 @@ import unicodedata
 from collections.abc import Callable
 from datetime import time
 
+import numpy as np
 import pandas as pd
 
 from core.exceptions import ArchivoInvalidoError, ImportacionError
-from core.horarios import TRABAJADORES, get_semana_inicio
+from core.horarios import DIAS_ORDEN, TRABAJADORES
 from core.logging import get_logger
 
 from .models import TurnoEquipo
@@ -102,39 +103,49 @@ def preparar_turnos_equipo(df: pd.DataFrame):
     if c_trab is None and c_acr is None:
         raise ArchivoInvalidoError("El archivo no tiene columna 'Agente'/'Trabajador'.")
 
-    filas, errores = [], []
-    for idx, r in df.iterrows():
-        nfila = idx + 2  # +1 base-1, +1 encabezado
-        raw = r[c_trab] if c_trab else r[c_acr]
-        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
-            errores.append(f"Fila {nfila}: sin agente.")
-            continue
-        if pd.isna(r[c_fecha]):
-            errores.append(f"Fila {nfila}: sin fecha.")
-            continue
-        try:
-            fecha = pd.to_datetime(r[c_fecha]).date()
-        except Exception:  # noqa: BLE001
-            errores.append(f"Fila {nfila}: fecha inválida ({r[c_fecha]!r}).")
-            continue
+    # Vectorizado con máscaras booleanas en vez de `iterrows()`: cada regla de validación
+    # es UNA expresión sobre la columna entera. Las reglas son excluyentes y en orden
+    # (sin agente → sin fecha → fecha inválida), como en la versión fila a fila.
+    agente = df[c_trab] if c_trab else df[c_acr]
+    # format="mixed": parsea CADA celda por separado. Sin él pandas infiere el formato de
+    # la primera y anula (NaT) las que lo usen distinto — un Excel a mano los mezcla.
+    fecha = pd.to_datetime(df[c_fecha], format="mixed", errors="coerce")
+    sin_agente = agente.isna()
+    sin_fecha = ~sin_agente & df[c_fecha].isna()
+    invalida = ~sin_agente & ~sin_fecha & fecha.isna()
+    # np.select = tabla condición → mensaje, evaluada en orden POSICIONAL (el de las
+    # filas del archivo, aunque el índice venga desordenado). Fila = posición + 2 en el
+    # caso habitual (índice 0..n-1): +1 base-1, +1 encabezado.
+    # dtype=object explícito: con 0 filas, `map(repr)` sobre una columna float conserva
+    # float64 y concatenar texto revienta (TypeError) — un archivo vacío es entrada válida.
+    nfila = pd.Series([f"Fila {i + 2}" for i in df.index], index=df.index, dtype=object)
+    fecha_repr = pd.Series([repr(v) for v in df[c_fecha]], index=df.index, dtype=object)
+    mensajes = np.select(
+        [sin_agente, sin_fecha, invalida],
+        [nfila + ": sin agente.",
+         nfila + ": sin fecha.",
+         nfila + ": fecha inválida (" + fecha_repr + ")."],
+        default="",
+    )
+    errores = [m for m in mensajes if m]
 
-        from core.horarios import DIAS_ORDEN
-        trab = normalizar_trabajador(raw)
-        semana = get_semana_inicio(fecha)
-        dia = DIAS_ORDEN[fecha.weekday()]
-        estado = _norm(r[c_est]) if c_est else ""
-        ent = parse_hora(r[c_ent]) if c_ent else None
-        sal = parse_hora(r[c_sal]) if c_sal else None
-        es_libre = estado == "libre" or ent is None or sal is None
+    ok = ~(sin_agente | sin_fecha | invalida)
+    dia_semana = fecha[ok].dt.weekday
+    entrada = df.loc[ok, c_ent].map(parse_hora) if c_ent else pd.Series(None, index=df.index[ok], dtype=object)
+    salida = df.loc[ok, c_sal].map(parse_hora) if c_sal else pd.Series(None, index=df.index[ok], dtype=object)
+    estado = df.loc[ok, c_est].map(_norm) if c_est else pd.Series("", index=df.index[ok])
+    es_libre = (estado == "libre") | entrada.isna() | salida.isna()
 
-        filas.append({
-            "semana_inicio": semana,
-            "trabajador": trab,
-            "dia": dia,
-            "entrada": None if es_libre else ent,
-            "salida": None if es_libre else sal,
-            "es_libre": es_libre,
-        })
+    turnos = pd.DataFrame({
+        "semana_inicio": (fecha[ok] - pd.to_timedelta(dia_semana, unit="D")).dt.date,
+        "trabajador": agente[ok].map(normalizar_trabajador),
+        "dia": dia_semana.map(dict(enumerate(DIAS_ORDEN))),
+        # astype(object) + where: un día libre lleva None, no NaT/NaN.
+        "entrada": entrada.astype(object).where(~es_libre, None),
+        "salida": salida.astype(object).where(~es_libre, None),
+        "es_libre": es_libre,
+    })
+    filas = turnos.to_dict("records")
 
     resumen = {
         "filas": len(filas),
