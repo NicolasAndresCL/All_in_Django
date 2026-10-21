@@ -7,6 +7,22 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 
 ## [Sin publicar]
 
+## [2.0.1] — 2026-10-21
+
+Mantenimiento de dependencias, sin cambios visibles. Reemplaza los 13 PRs de Dependabot abiertos
+desde agosto (#1 a #13).
+
+### Cambiado
+
+- GitHub Actions a su última versión mayor, que corre sobre Node 24: `checkout` v7, `setup-python` v7,
+  `build-push-action` v7, `metadata-action` v6 y `login-action` v4. Incluye `release.yml`, que los PRs
+  no cubrían.
+- Versiones mínimas de los `requirements` al día con lo que el CI ya instalaba y probaba: DRF 3.18,
+  pydantic-settings 2.15, beautifulsoup4 4.15, nicegui 3.18, plotly 7, python-dotenv 1.2.3 y las
+  herramientas de test (pytest 9.1, pytest-asyncio 1.4, ruff 0.16.10…).
+- Dependabot agrupa las actualizaciones: minor y patch en un solo PR por ecosistema, todas las actions
+  juntas y las imágenes base juntas. Solo una versión mayor de pip llega en un PR propio.
+
 ## [2.0.0] — 2026-10-21
 
 ### ⚠️ Cambio incompatible
@@ -73,6 +89,7 @@ Primera versión publicada en GHCR (`all-in-django-api` y `all-in-django-ui`).
 - IaC: Terraform (EC2 + RDS) y chart de Helm.
 - Esquema OpenAPI generado con drf-spectacular y colección Postman que se valida contra un stack efímero.
 
-[Sin publicar]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.0.0...HEAD
+[Sin publicar]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/NicolasAndresCL/All_in_Django/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/NicolasAndresCL/All_in_Django/releases/tag/v1.0.0

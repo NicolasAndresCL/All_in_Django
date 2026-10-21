@@ -165,7 +165,7 @@ SPECTACULAR_SETTINGS = {
         "registro de tareas, notas y parrilla de TV chilena. Autenticacion por token "
         "(`Authorization: Token <clave>`) obtenido en `/api/token/`."
     ),
-    "VERSION": "2.0.0",
+    "VERSION": "2.0.1",
     "SERVE_INCLUDE_SCHEMA": False,
 }
 

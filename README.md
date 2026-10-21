@@ -1,12 +1,12 @@
 # 🧩 All in Django — API Django/DRF + UI NiceGUI con IaC de punta a punta
 
 [![CI](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml)
-![Versión](https://img.shields.io/badge/versi%C3%B3n-2.0.0-blue)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-2.0.1-blue)
 ![Python](https://img.shields.io/badge/python-3.14-3776AB)
 
 | | |
 |---|---|
-| **Versión** | 2.0.0 |
+| **Versión** | 2.0.1 |
 | **Fecha** | 21 de octubre de 2026 |
 | **Autor** | [Nicolás Andrés Cano Leal](#autor) |
 
@@ -235,8 +235,8 @@ Lo que el pipeline hace por ti, y antes no:
 
 ```bash
 # Equivalente manual (lo que ejecuta el Jenkinsfile):
-IMAGE_TAG=2.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-IMAGE_TAG=2.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+IMAGE_TAG=2.0.1 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+IMAGE_TAG=2.0.1 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 ```
 
 > Ya no se pasa `-p`: el nombre de proyecto (`all_in_django`) está fijado con `name:` dentro de
@@ -274,11 +274,11 @@ ensaya nunca.
 
 ```bash
 docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
-docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.0.0
-docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.0.0
-docker push localhost:5000/nicolasandrescl/all-in-django-api:2.0.0
-docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.0.0
-# y lanzar el job con IMAGE_TAG=2.0.0  REGISTRY=localhost:5000
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.0.1
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.0.1
+docker push localhost:5000/nicolasandrescl/all-in-django-api:2.0.1
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.0.1
+# y lanzar el job con IMAGE_TAG=2.0.1  REGISTRY=localhost:5000
 ```
 
 Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
@@ -842,4 +842,4 @@ Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
 - Portafolio: [nicolasandrescl.github.io](https://nicolasandrescl.github.io/)
 - Correo: [nicolas.cano.leal@gmail.com](mailto:nicolas.cano.leal@gmail.com)
 
-All in Django v2.0.0 · 21 de octubre de 2026
+All in Django v2.0.1 · 21 de octubre de 2026
