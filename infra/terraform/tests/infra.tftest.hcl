@@ -33,7 +33,7 @@ mock_provider "random" {}
 variables {
   secret_key = "clave-de-prueba-larga-y-con-variedad-0123456789-abcdefghijklmnop"
   api_token  = "0123456789abcdef0123456789abcdef01234567"
-  image_tag  = "v1.2.3"
+  image_tag  = "1.2.3"
 }
 
 # ─── Base de datos: privada, misma version que el resto del proyecto y con red de seguridad ──
@@ -143,7 +143,7 @@ run "cloud_init_inyecta_lo_que_el_stack_necesita" {
     error_message = "El alta del token corre tras `up -d --wait`: antes, la base puede estar a medio migrar."
   }
   assert {
-    condition     = length(regexall("ghcr.io/nicolasandrescl/all-in-django-(api|ui):v1.2.3", aws_instance.app.user_data)) == 2
+    condition     = length(regexall("ghcr.io/nicolasandrescl/all-in-django-(api|ui):1.2.3", aws_instance.app.user_data)) == 2
     error_message = "Las dos imagenes (api y ui) deben llevar el image_tag indicado."
   }
   assert {
@@ -161,6 +161,14 @@ run "rechaza_image_tag_latest" {
   command = plan
   variables {
     image_tag = "latest"
+  }
+  expect_failures = [var.image_tag]
+}
+
+run "rechaza_image_tag_con_v" {
+  command = plan
+  variables {
+    image_tag = "v1.2.3"
   }
   expect_failures = [var.image_tag]
 }

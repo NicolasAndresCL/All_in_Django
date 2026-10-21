@@ -86,7 +86,7 @@ variable "images_owner" {
 }
 
 variable "image_tag" {
-  description = "Tag de las imagenes a desplegar (vX.Y.Z). Sin default: en produccion se elige a proposito."
+  description = "Tag de las imagenes a desplegar (X.Y.Z, sin la v del tag de git). Sin default: en produccion se elige a proposito."
   type        = string
 
   # `latest` NO existe en GHCR (docker-publish.yml solo publica semver+sha): con ese valor
@@ -95,7 +95,14 @@ variable "image_tag" {
   # el chart de Helm (resuelve al appVersion).
   validation {
     condition     = var.image_tag != "" && var.image_tag != "latest"
-    error_message = "image_tag no puede ser vacio ni 'latest' (GHCR no lo publica); usa un tag vX.Y.Z existente."
+    error_message = "image_tag no puede ser vacio ni 'latest' (GHCR no lo publica); usa un tag X.Y.Z existente."
+  }
+
+  # docker/metadata-action publica el semver SIN la v: el tag de git v2.0.0 produce la imagen
+  # :2.0.0. Con "v2.0.0" el pull del cloud-init fallaria igual de mudo que con `latest`.
+  validation {
+    condition     = !startswith(var.image_tag, "v")
+    error_message = "image_tag va sin la v inicial (2.0.0, no v2.0.0): asi lo publica GHCR."
   }
 }
 

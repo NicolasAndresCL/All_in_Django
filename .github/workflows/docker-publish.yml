@@ -1,12 +1,12 @@
 name: Publicar imágenes
 
-# Publica las imágenes en GHCR al crear un release o un tag vX.Y.Z.
+# Publica las imágenes en GHCR al pushear un tag vX.Y.Z. Solo el tag: si también se
+# disparara con `release: published`, cada versión construiría y subiría todo dos veces
+# (release.yml crea la release con ese mismo push).
 # Usa el GITHUB_TOKEN (no requiere secretos extra); el paquete queda en
 # ghcr.io/<owner>/all-in-django-{api,ui}.
 
 on:
-  release:
-    types: [published]
   push:
     tags: ["v*.*.*"]
 
@@ -41,6 +41,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          # metadata-action añade `latest` por defecto en los tags semver. Se apaga: el
+          # despliegue exige un tag inmutable (Jenkinsfile, Terraform y Helm rechazan latest).
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

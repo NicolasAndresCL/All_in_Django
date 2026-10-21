@@ -17,7 +17,7 @@ Provisiona la infra mínima para correr la app en AWS:
   `docker run --rm -v <ruta>:/tf -w /tf hashicorp/terraform:1.16.3` (la versión fija del CI).
 - Un **bucket S3 para el estado** ya creado (ver más abajo).
 - Las imágenes publicadas en GHCR (workflow `docker-publish.yml`, al crear un tag `vX.Y.Z`).
-  **`image_tag` no tiene default y rechaza `latest`**: GHCR nunca lo tiene, y con él el
+  **`image_tag` va sin la `v` (`2.0.0`), no tiene default y rechaza `latest`**: el CI no lo mantiene, y con él (o con la `v`) el
   `docker compose pull` del cloud-init moría en la primera EC2 sin más rastro que su log.
 - Un **`api_token`** (40 hex: `python -c "import secrets; print(secrets.token_hex(20))"`).
   El cloud-init lo da de alta en la base (usuario de servicio `ui`, sin contraseña) y se lo
@@ -102,7 +102,7 @@ inventado; las aserciones miran lo que **este código** decide:
 | `postgres_solo_desde_la_app` | el SG del RDS tiene **una** regla: 5432 desde el SG de la app, sin CIDRs; la EC2 lleva ese SG |
 | `ssh_restringido_al_cidr_indicado` | la regla 22 usa exactamente `ssh_ingress_cidr` |
 | `cloud_init_inyecta_lo_que_el_stack_necesita` | el `user_data` lleva `SECRET_KEY`, `DEBUG=False`, `DATABASE_URL` al RDS, **`API_TOKEN`** (y su alta en la base con la **misma** clave), `up -d --wait` antes del alta, las dos imágenes con el `image_tag` pedido, nada en `:latest` y **ningún CRLF** |
-| `rechaza_*` (5) | las `validation` de `image_tag` (vacío/`latest`), `secret_key` (< 50 chars o < 5 distintos, el gate de `core/conf.py`) y `api_token` (no hex o corto) abortan en el `plan` |
+| `rechaza_*` (6) | las `validation` de `image_tag` (vacío/`latest`/con `v` inicial), `secret_key` (< 50 chars o < 5 distintos, el gate de `core/conf.py`) y `api_token` (no hex o corto) abortan en el `plan` |
 
 Se ha comprobado que **falla cuando debe**: con `publicly_accessible = true` o sin la línea
 `API_TOKEN=` del cloud-init, la prueba se pone en rojo con el mensaje que explica el porqué.
@@ -125,8 +125,10 @@ Tres cosas del simulador que cuestan un rato:
   revés, `expect_failures` sobre una `validation` **solo** funciona con `command = plan`.
 
 **CRLF**: `templatefile()` lee la plantilla del **disco**, y con `core.autocrlf=true` un
-checkout de Windows la deja con `
-` — la EC2 recibiría `#!/bin/bash` y cloud-init no la
+checkout de Windows la deja con `
+
+` — la EC2 recibiría `#!/bin/bash
+` y cloud-init no la
 ejecutaría, sin error en Terraform. `.gitattributes` fuerza `eol=lf` en `templates/*.tftpl`
 y la prueba lo vigila.
 
