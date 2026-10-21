@@ -16,6 +16,12 @@ updates:
       # revisan juntas porque suelen subir en bloque.
       dev:
         patterns: ["pytest*", "coverage", "responses", "ruff"]
+      # Cada dependencia cae en el PRIMER grupo que la calza: las de test ya estan en
+      # `dev`. Minor y patch van juntas; una major queda en su propio PR, porque es la
+      # unica que merece revisarse sola (2026-10-21: 13 PRs sueltos se acumularon 2 meses).
+      menores:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: pip
     directory: "/nicegui_ui"
@@ -25,6 +31,10 @@ updates:
     open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps-ui)"
+    groups:
+      menores:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # Las actions se fijan por tag mayor (@v4); Dependabot avisa cuando sale una v5.
   - package-ecosystem: github-actions
@@ -33,6 +43,11 @@ updates:
       interval: monthly
     commit-message:
       prefix: "ci(deps)"
+    # Todas en un PR: suben en bloque (p. ej. el salto a Node 24 movio 5 a la vez) y se
+    # verifican juntas con un solo run del CI.
+    groups:
+      actions:
+        patterns: ["*"]
 
   # Imagenes base de los Dockerfiles (python:3.14-slim).
   - package-ecosystem: docker
@@ -43,3 +58,7 @@ updates:
       interval: monthly
     commit-message:
       prefix: "chore(docker)"
+    # La API y la UI parten de la misma python:3.14-slim: que suban juntas.
+    groups:
+      imagenes-base:
+        patterns: ["*"]
