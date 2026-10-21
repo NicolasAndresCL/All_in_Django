@@ -51,6 +51,9 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 - Respaldo: cuenta filas reales en vez de las estimaciones del planificador.
 - Cloud-init de la EC2: hereda las reglas de Compose y Helm.
 - `verificar.ps1` borra la `SECRET_KEY` efímera al terminar.
+- Tests de interacción de la UI: esperan los `refresh()` que la vista deja en segundo plano. Desde
+  nicegui 3.18 el error de esa petición sin simular tumbaba el test en el teardown y contaminaba
+  a los siguientes.
 
 ## [1.0.0] — 2026-09-01
 

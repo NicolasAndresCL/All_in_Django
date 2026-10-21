@@ -15,6 +15,7 @@ No levantan el backend: `responses` intercepta el HTTP, igual que el resto de la
 """
 
 import asyncio
+import contextlib
 import json
 
 import responses
@@ -34,9 +35,38 @@ def _peticiones(rsps: responses.RequestsMock, metodo: str, sufijo: str) -> list[
     ]
 
 
+@contextlib.asynccontextmanager
+async def _api_simulada():
+    """`responses` activo hasta que terminan los refresh que la accion dejo en curso.
+
+    Tras crear o copiar, la vista llama a `contenido.refresh()` SIN await: NiceGUI lo corre
+    en una tarea de fondo que vuelve a pedir `/clases/` cuando el test ya salio del `with`.
+    Hasta nicegui 3.17 esa peticion sin mock fallaba en silencio; desde la 3.18 los errores
+    de un fire-and-forget se reportan al cliente y el fixture `user` tumba el test en el
+    teardown ("There were unexpected ERROR logs"), y ademas la tarea huerfana contamina los
+    tests siguientes. Esperarlas aqui deja cada test cerrado sobre si mismo.
+    """
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        yield rsps
+        await _esperar_refrescos()
+
+
+async def _esperar_refrescos() -> None:
+    from nicegui import background_tasks
+
+    for _ in range(20):
+        pendientes = [
+            t for t in background_tasks.running_tasks
+            if not t.done() and t.get_name().startswith(("refresh", "fire"))
+        ]
+        if not pendientes:
+            return
+        await asyncio.wait(pendientes, timeout=1)
+
+
 # ─── Calendario · alta de clase ──────────────────────────────────────────────
 async def test_crear_clase_envia_el_payload_que_la_api_espera(user: User) -> None:
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.post(f"{BASE}/clases/", json={"id": 2}, status=201)
 
@@ -55,7 +85,7 @@ async def test_crear_clase_envia_el_payload_que_la_api_espera(user: User) -> Non
 
 async def test_crear_clase_sin_asignatura_no_llega_a_la_api(user: User) -> None:
     """El otro sentido: la validacion corta ANTES de la peticion, no despues de un 400."""
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.post(f"{BASE}/clases/", json={"id": 2}, status=201)
 
@@ -68,7 +98,7 @@ async def test_crear_clase_sin_asignatura_no_llega_a_la_api(user: User) -> None:
 
 # ─── Calendario · copiar semana ──────────────────────────────────────────────
 async def test_copiar_semana_manda_origen_y_destino(user: User) -> None:
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.post(f"{BASE}/clases/copiar_semana/",
                   json={"copiadas": 3, "destino": "2026-07-06"})
@@ -89,7 +119,7 @@ async def test_copiar_semana_manda_origen_y_destino(user: User) -> None:
 async def test_guardar_semana_hace_upsert_de_los_siete_dias(user: User) -> None:
     """La grilla no da de alta dia a dia: guarda los 7 de una vez, y el serializer hace
     upsert por (semana, dia). Si se rompiera el bucle, faltarian dias sin ningun error."""
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.post(f"{BASE}/turnos-personales/", json={"id": 1}, status=201)
 
@@ -106,7 +136,7 @@ async def test_guardar_semana_hace_upsert_de_los_siete_dias(user: User) -> None:
 async def test_marcar_un_dia_libre_lo_envia_sin_horario(user: User) -> None:
     """Un turno libre va con es_libre=True y SIN entrada/salida: el modelo las calcula a
     None. Mandar horas en un dia libre es justo lo que el checkbox debe evitar."""
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.post(f"{BASE}/turnos-personales/", json={"id": 1}, status=201)
 
@@ -138,7 +168,7 @@ async def test_filtrar_por_proyecto_deja_fuera_los_demas(user: User) -> None:
         (registros,) = user.find(kind=ui.table, marker="registros").elements
         return {fila["tarea"] for fila in registros.rows}
 
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps, tareas=dos_proyectos)
 
         await user.open("/tareas")
@@ -167,7 +197,7 @@ async def test_elegir_un_tema_lo_guarda_para_este_usuario(user: User) -> None:
 
     from nicegui_ui import tema as t
 
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         await user.open("/")
         assert t.tema_elegido() == t.TEMA_AUTO  # de fabrica, el personaje de cada pagina
@@ -183,7 +213,7 @@ async def test_elegir_un_tema_lo_guarda_para_este_usuario(user: User) -> None:
 
 # ─── Tareas · informe PDF (seaborn, generado en la API) ──────────────────────
 async def test_boton_informe_pide_el_pdf_a_la_api(user: User) -> None:
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.get(f"{BASE}/tareas/informe/", body=b"%PDF-1.4 falso", content_type="application/pdf")
 
@@ -195,7 +225,7 @@ async def test_boton_informe_pide_el_pdf_a_la_api(user: User) -> None:
 
 
 async def test_informe_fallido_avisa_en_vez_de_descargar(user: User) -> None:
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         mock_api(rsps)
         rsps.get(f"{BASE}/tareas/informe/", status=500)
 
@@ -208,7 +238,7 @@ async def test_sin_tendencia_explica_cuantas_semanas_faltan(user: User) -> None:
     """Con `tendencia: null` la vista dice POR QUÉ (los requisitos vienen de la API)."""
     from datos_api import ANALITICA
 
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+    async with _api_simulada() as rsps:
         rsps.get(f"{BASE}/tareas/analitica/", json={**ANALITICA, "tendencia": None, "atipicos": []})
         mock_api(rsps)
         await user.open("/tareas")
