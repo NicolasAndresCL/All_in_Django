@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: write   # solo este job puede crear la release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: El tag coincide con la version del proyecto
         env:
