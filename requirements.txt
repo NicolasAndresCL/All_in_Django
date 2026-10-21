@@ -1,7 +1,7 @@
 django>=5.2
 djangorestframework>=3.18.0
 drf-spectacular>=0.28       # esquema OpenAPI 3 desde el codigo (contrato de la API)
-pydantic-settings>=2.15.0
+pydantic-settings>=2.16.0
 pandas>=2.0               # DataFrames: resumen del dashboard e importacion de LiveOps
 numpy>=2.0                # vectorizacion (racha, np.select); explicita aunque llegue con pandas
 scikit-learn>=1.7         # analitica de tareas: LinearRegression + IsolationForest
