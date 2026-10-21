@@ -9,6 +9,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # Los requirements usan `>=` y el CI instala siempre la ultima: un PR que solo sube el
+    # piso no cambia lo que se prueba, y llegaba uno cada semana. Solo se toca el requirement
+    # cuando la version nueva NO cabe en el rango (p. ej. si algun dia se pone un tope `<`).
+    versioning-strategy: increase-if-necessary
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -29,6 +33,7 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 3
+    versioning-strategy: increase-if-necessary
     commit-message:
       prefix: "chore(deps-ui)"
     groups:

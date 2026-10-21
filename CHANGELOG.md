@@ -7,6 +7,12 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 
 ## [Sin publicar]
 
+### Cambiado
+
+- Dependabot ya no abre PRs de pip que solo suben la versión mínima (`versioning-strategy:
+  increase-if-necessary`). Con `>=` en los requirements el CI ya instala siempre la última versión,
+  así que esos PRs no cambiaban lo que se prueba y llegaban cada semana.
+
 ## [2.0.1] — 2026-10-21
 
 Mantenimiento de dependencias, sin cambios visibles. Reemplaza los 13 PRs de Dependabot abiertos
