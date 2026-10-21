@@ -835,7 +835,8 @@ Las pruebas HTTP (colección Postman) son el único punto que **no** es Python: 
 
 ## Autor
 
-**Nicolás Andrés Cano Leal**Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
+**Nicolás Andrés Cano Leal**\
+Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
 
 - LinkedIn: [linkedin.com/in/nicolasandrescl](https://www.linkedin.com/in/nicolasandrescl/)
 - Portafolio: [nicolasandrescl.github.io](https://nicolasandrescl.github.io/)
