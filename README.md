@@ -1,6 +1,14 @@
-# 🧩 All in Django
+# 🧩 All in Django — API Django/DRF + UI NiceGUI con IaC de punta a punta
 
 [![CI](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-2.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.14-3776AB)
+
+| | |
+|---|---|
+| **Versión** | 2.0.0 |
+| **Fecha** | 21 de octubre de 2026 |
+| **Autor** | [Nicolás Andrés Cano Leal](#autor) |
 
 Versión **Django + Django REST Framework** del proyecto `all_in_one` (que era 100% Streamlit).
 Backend con API REST + Django Admin, configuración tipada con **pydantic-settings**,
@@ -84,7 +92,8 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 | Respaldo programado | `Jenkinsfile.respaldo` | job nocturno que **restaura** el dump y compara el censo |
 | CI | `.github/workflows/ci.yml` | lint → tests/cobertura + Postgres real + hardening → build, arranque **y pruebas HTTP** |
 | Pruebas de API | `postman/` + `docker-compose.test.yml` + `scripts/probar_api.ps1` | stack efímero + colección Postman (Newman) |
-| Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver+sha, **no** `latest`) |
+| Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver **sin la `v`** + sha, **no** `latest`) |
+| Releases | `.github/workflows/release.yml` + `CHANGELOG.md` | GitHub Release por tag, con las notas de su sección del CHANGELOG |
 | **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de GHCR por compose, con respaldo previo y **rollback** |
 | Nube | `infra/terraform/` (AWS EC2 + RDS Postgres 18) | infra en la nube (skeleton) |
 | Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres 18/Ingress) |
@@ -207,7 +216,10 @@ GHCR en tags `v*`). El **CD lo hace Jenkins** (corriendo en Docker): un pipeline
 (`Jenkinsfile`) que **despliega las imágenes ya publicadas** en el mismo daemon Docker donde vive
 Jenkins, con `docker-compose.deploy.yml` (usa `image:` de GHCR, no `build:`).
 
-**Flujo**: `git tag vX.Y.Z && git push --tags` → Actions publica `all-in-django-{api,ui}` a GHCR →
+**Flujo**: versión subida en `config/settings.py`, `Chart.yaml` y README, y su sección en
+`CHANGELOG.md` → push con el CI en verde → `git tag -a vX.Y.Z -m "..."` + `git push origin vX.Y.Z`
+→ Actions publica `all-in-django-{api,ui}:X.Y.Z` a GHCR (**sin la `v`**) y `release.yml` crea la
+GitHub Release (falla sin publicar si el tag no coincide con la versión o falta la sección) →
 Job de Jenkins (parámetro **`IMAGE_TAG`**) → valida el tag → **respalda la base** → `pull` +
 `up -d` → espera a que **API y UI** queden `healthy`. Las migraciones se aplican solas
 (entrypoint de la API).
@@ -223,8 +235,8 @@ Lo que el pipeline hace por ti, y antes no:
 
 ```bash
 # Equivalente manual (lo que ejecuta el Jenkinsfile):
-IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+IMAGE_TAG=2.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+IMAGE_TAG=2.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 ```
 
 > Ya no se pasa `-p`: el nombre de proyecto (`all_in_django`) está fijado con `name:` dentro de
@@ -248,7 +260,9 @@ IMAGE_TAG=1.0.0 docker compose --env-file .env.docker -f docker-compose.deploy.y
 > `jenkins/README.md`.
 
 > **Nota (`latest`)**: Actions publica `{{version}}`/`{{major}}.{{minor}}`/`sha` pero **no
-> `latest`** — pasa el semver publicado en `IMAGE_TAG`. El pipeline **aborta** si recibe
+> `latest`** (`flavor: latest=false`; hasta la 1.0.0 sí lo publicaba, por el default de
+> `metadata-action`, y ese `latest` viejo sigue en GHCR apuntando a la 1.0.0) — pasa el semver
+> publicado en `IMAGE_TAG`. El pipeline **aborta** si recibe
 > `latest` o un valor vacío.
 
 #### Ensayar el pipeline sin publicar nada
@@ -260,11 +274,11 @@ ensaya nunca.
 
 ```bash
 docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
-docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:1.0.0
-docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:1.0.0
-docker push localhost:5000/nicolasandrescl/all-in-django-api:1.0.0
-docker push localhost:5000/nicolasandrescl/all-in-django-ui:1.0.0
-# y lanzar el job con IMAGE_TAG=1.0.0  REGISTRY=localhost:5000
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.0.0
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.0.0
+docker push localhost:5000/nicolasandrescl/all-in-django-api:2.0.0
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.0.0
+# y lanzar el job con IMAGE_TAG=2.0.0  REGISTRY=localhost:5000
 ```
 
 Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
@@ -821,4 +835,10 @@ Las pruebas HTTP (colección Postman) son el único punto que **no** es Python: 
 
 ## Autor
 
-**Nicolás Andrés Cano Leal** — 2026 · LiveOps & BizOps · Python Backend · Data Automation
+**Nicolás Andrés Cano Leal**Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
+
+- LinkedIn: [linkedin.com/in/nicolasandrescl](https://www.linkedin.com/in/nicolasandrescl/)
+- Portafolio: [nicolasandrescl.github.io](https://nicolasandrescl.github.io/)
+- Correo: [nicolas.cano.leal@gmail.com](mailto:nicolas.cano.leal@gmail.com)
+
+All in Django v2.0.0 · 21 de octubre de 2026

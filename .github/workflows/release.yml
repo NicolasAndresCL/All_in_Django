@@ -1,0 +1,47 @@
+name: Release
+
+# Cada tag vX.Y.Z publica su GitHub Release con las notas de la seccion del CHANGELOG.
+# Antes de publicar verifica que el tag coincide con la version del proyecto y que el
+# CHANGELOG tiene esa seccion: un tag mal numerado deja el job en rojo y sin release.
+# Las imagenes de GHCR las publica docker-publish.yml con el mismo push del tag.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # solo este job puede crear la release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: El tag coincide con la version del proyecto
+        env:
+          # La version vive en SPECTACULAR_SETTINGS["VERSION"] (la que muestra el OpenAPI).
+          VERSION_FILE: config/settings.py
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          grep -qF "\"VERSION\": \"$v\"" "$VERSION_FILE" \
+            || { echo "::error::$VERSION_FILE no contiene \"VERSION\": \"$v\""; exit 1; }
+
+      - name: Notas desde la seccion del CHANGELOG
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          # index() compara texto literal: en una regex los puntos de 1.2.0 calzan con cualquier caracter.
+          awk -v v="$v" 'index($0, "## [" v "]") == 1 {f=1; next} /^## \[/ {f=0} f' \
+            CHANGELOG.md > notas.md
+          test -s notas.md || { echo "::error::CHANGELOG.md sin seccion [$v]"; exit 1; }
+
+      - name: Crear la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes-file notas.md $flags
