@@ -2,12 +2,15 @@
 # Lo usa el Jenkinsfile para desplegar en el mismo daemon Docker donde corre Jenkins.
 # Para desarrollo/build local usa docker-compose.yml (con `build:`).
 #
-#   IMAGE_TAG=2.0.1 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-#   IMAGE_TAG=2.0.1 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+#   IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+#   IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 #
 # Variables de imagen (Jenkins las inyecta; defaults abajo):
 #   REGISTRY=ghcr.io  IMAGE_OWNER=nicolasandrescl  IMAGE_TAG=<semver publicado>
 # El CI de Actions NO publica `latest`: pasa el semver real (p. ej. 1.0.0 o 1.0).
+#
+# Detras de un Traefik que ya existe en el servidor (VPS): compose.traefik.yml se aplica
+# ENCIMA de este archivo (ver su cabecera). Este archivo no cambia para eso.
 
 # Mismo nombre de proyecto que docker-compose.yml: el despliegue REEMPLAZA el stack local
 # en vez de levantar un segundo stack paralelo con los mismos puertos. Antes dev usaba

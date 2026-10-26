@@ -1,0 +1,92 @@
+# All in Django detras de un Traefik que YA existe en el servidor (p. ej. el VPS con n8n, que
+# ocupa 80/443 con Let's Encrypt). Se aplica ENCIMA de docker-compose.deploy.yml (imagenes ya
+# publicadas en GHCR: en el servidor no se construye nada):
+#
+#   docker compose -f docker-compose.deploy.yml -f compose.traefik.yml up -d --wait
+#
+# En el servidor, mejor fijarlo en el .env para que un `docker compose up` a secas NUNCA
+# levante el stack base (que publica 5433/8000/8501 saltandose el firewall):
+#   COMPOSE_PATH_SEPARATOR=:
+#   COMPOSE_FILE=docker-compose.deploy.yml:compose.traefik.yml
+#
+# Que cambia respecto del compose de despliegue:
+#   - No publica NINGUN puerto en el host: los puertos que publica Docker se saltan
+#     firewalld/ufw. Solo Traefik llega a la UI, por la red compartida.
+#   - Solo la UI entra a la red de Traefik. La UI es un cliente servidor-a-servidor de la API
+#     (nicegui_ui/api_client.py: `requests` desde el proceso de NiceGUI): el navegador nunca
+#     habla con la API. Por eso la API (con /admin/ y /api/token/) y Postgres quedan en
+#     all_in_django-net, inalcanzables desde Traefik.
+#   - Basic auth en Traefik: la UI no tiene login propio y permite escribir.
+#   - mem_limit por servicio: el VPS es compartido. Se ajustan desde el .env (*_MEM_LIMIT) y
+#     no editando este archivo: el clon del servidor sigue un tag (detached HEAD) y un archivo
+#     modificado romperia el siguiente `git checkout vX.Y.Z`.
+#   - Un unico .env: se anula el `env_file: .env.docker` del compose base (en el servidor no
+#     existe) y la API recibe por `environment` lo que lee core/conf.py.
+#   - 1 worker de gunicorn (el default de docker/gunicorn.conf.py son 3) y Postgres acotado.
+#
+# SECURE_HTTPS debe quedar en False mientras la API sea solo interna: la UI la llama por
+# http://api:8000 (sin cabecera X-Forwarded-Proto) y con SECURE_SSL_REDIRECT=True Django
+# contestaria 301 a https://api:8000, donde gunicorn no habla TLS: la UI quedaria sin API.
+#
+# Variables extra del .env (ademas de las de .env.docker.example):
+#   IMAGE_TAG                  semver publicado en GHCR, sin `v` (p. ej. 2.1.0)
+#   ALL_IN_DJANGO_HOST         nombre publico, p. ej. allindjango.<ip-con-guiones>.sslip.io
+#   TRAEFIK_NETWORK            red de Docker donde vive Traefik (`docker network ls`)
+#   ALL_IN_DJANGO_BASIC_AUTH   usuario:hash ($apr1$ o bcrypt) ENTRE COMILLAS SIMPLES en el .env,
+#                              para que Compose no interprete los `$` del hash
+#   UI_STORAGE_SECRET          firma la cookie de sesion de NiceGUI (openssl rand -hex 24)
+#   TRAEFIK_CERTRESOLVER       resolver ACME de ese Traefik (por defecto `le`)
+#   TRAEFIK_ENTRYPOINT         entrypoint HTTPS de ese Traefik (por defecto `websecure`)
+#   DB_MEM_LIMIT / API_MEM_LIMIT / UI_MEM_LIMIT   limites de memoria (160m / 512m / 320m)
+
+services:
+  db:
+    ports: !reset []
+    mem_limit: ${DB_MEM_LIMIT:-160m}
+    # shared_buffers de 32 MB (el default son 128 MB) y pocas conexiones: con 1 worker de
+    # gunicorn y conn_max_age=600 la API mantiene 1 conexion. Sin este command, Postgres
+    # arranca con la configuracion de fabrica de la imagen.
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=20", "-c", "maintenance_work_mem=32MB"]
+
+  api:
+    ports: !reset []
+    env_file: !reset []
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    environment:
+      DEBUG: "False"
+      # 'api' es el Host con el que la UI llama (http://api:8000); 'localhost' es el del
+      # HEALTHCHECK de la imagen. Sin ellos Django responde 400 DisallowedHost.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      SECURE_HTTPS: ${SECURE_HTTPS:-False}
+      LOG_FORMATO: ${LOG_FORMATO:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Un worker: cada uno carga pandas + scikit-learn + seaborn (cientos de MiB). Las
+      # peticiones se serializan, aceptable para un uso personal tras basic auth.
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-1}
+
+  ui:
+    ports: !reset []
+    mem_limit: ${UI_MEM_LIMIT:-320m}
+    networks: [default, traefik]
+    environment:
+      # Sin esto NiceGUI usa un secreto fijo del codigo ("all-in-django-ui").
+      UI_STORAGE_SECRET: ${UI_STORAGE_SECRET:?define UI_STORAGE_SECRET en tu .env}
+    labels:
+      traefik.enable: "true"
+      # Con dos redes, Traefik debe saber por cual llegar al contenedor.
+      traefik.docker.network: ${TRAEFIK_NETWORK:?define TRAEFIK_NETWORK en tu .env}
+      traefik.http.routers.all-in-django.rule: Host(`${ALL_IN_DJANGO_HOST:?define ALL_IN_DJANGO_HOST en tu .env}`)
+      traefik.http.routers.all-in-django.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.all-in-django.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-le}
+      traefik.http.routers.all-in-django.middlewares: all-in-django-auth
+      traefik.http.middlewares.all-in-django-auth.basicauth.users: ${ALL_IN_DJANGO_BASIC_AUTH:?define ALL_IN_DJANGO_BASIC_AUTH en tu .env}
+      traefik.http.services.all-in-django.loadbalancer.server.port: "8501"
+
+networks:
+  # Red propia con nombre fijo (en vez de all_in_django_default): api y db viven aqui.
+  default:
+    name: all_in_django-net
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK}

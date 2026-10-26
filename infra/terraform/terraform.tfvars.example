@@ -16,7 +16,7 @@ api_token = "cambia-esto-por-40-hex"
 # Owner de las imágenes en GHCR y tag a desplegar. `latest` NO existe en GHCR (el CI solo
 # publica semver+sha): usa un tag real SIN la v, p. ej. el último `git tag --list 'v*'` sin su v.
 images_owner = "nicolasandrescl"
-image_tag    = "2.0.1"
+image_tag    = "2.1.0"
 
 # Opcional: key pair EC2 para SSH y tu IP para restringir el acceso.
 # ssh_key_name     = "mi-keypair"

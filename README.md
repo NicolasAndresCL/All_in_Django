@@ -1,13 +1,13 @@
 # 🧩 All in Django — API Django/DRF + UI NiceGUI con IaC de punta a punta
 
 [![CI](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml)
-![Versión](https://img.shields.io/badge/versi%C3%B3n-2.0.1-blue)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-2.1.0-blue)
 ![Python](https://img.shields.io/badge/python-3.14-3776AB)
 
 | | |
 |---|---|
-| **Versión** | 2.0.1 |
-| **Fecha** | 21 de octubre de 2026 |
+| **Versión** | 2.1.0 |
+| **Fecha** | 26 de octubre de 2026 |
 | **Autor** | [Nicolás Andrés Cano Leal](#autor) |
 
 Versión **Django + Django REST Framework** del proyecto `all_in_one` (que era 100% Streamlit).
@@ -52,6 +52,8 @@ all_in_django/
 │   ├── Dockerfile           # imagen de la UI
 │   └── tests/               # cliente, charts, gantt y smoke de páginas (responses + nicegui.testing)
 ├── Dockerfile  docker/entrypoint.sh  docker-compose.yml  .dockerignore  .env.docker.example
+├── docker-compose.deploy.yml # CD: imágenes de GHCR, sin build
+├── compose.traefik.yml      # override del VPS: detrás de un Traefik existente, 0 puertos publicados
 ├── .github/workflows/       # ci.yml (tests+build) · docker-publish.yml (GHCR)
 ├── infra/terraform/         # AWS EC2 + RDS (skeleton)
 ├── infra/helm/all-in-django/ # chart de Kubernetes
@@ -95,6 +97,7 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 | Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver **sin la `v`** + sha, **no** `latest`) |
 | Releases | `.github/workflows/release.yml` + `CHANGELOG.md` | GitHub Release por tag, con las notas de su sección del CHANGELOG |
 | **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de GHCR por compose, con respaldo previo y **rollback** |
+| **VPS** | `compose.traefik.yml` + `docker-compose.deploy.yml` | despliegue detrás de un Traefik existente: 0 puertos publicados, basic auth, `mem_limit` ([detalle](#detrás-de-un-traefik-existente-vps)) |
 | Nube | `infra/terraform/` (AWS EC2 + RDS Postgres 18) | infra en la nube (skeleton) |
 | Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres 18/Ingress) |
 
@@ -235,8 +238,8 @@ Lo que el pipeline hace por ti, y antes no:
 
 ```bash
 # Equivalente manual (lo que ejecuta el Jenkinsfile):
-IMAGE_TAG=2.0.1 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-IMAGE_TAG=2.0.1 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 ```
 
 > Ya no se pasa `-p`: el nombre de proyecto (`all_in_django`) está fijado con `name:` dentro de
@@ -274,11 +277,11 @@ ensaya nunca.
 
 ```bash
 docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
-docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.0.1
-docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.0.1
-docker push localhost:5000/nicolasandrescl/all-in-django-api:2.0.1
-docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.0.1
-# y lanzar el job con IMAGE_TAG=2.0.1  REGISTRY=localhost:5000
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.1.0
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.1.0
+docker push localhost:5000/nicolasandrescl/all-in-django-api:2.1.0
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.1.0
+# y lanzar el job con IMAGE_TAG=2.1.0  REGISTRY=localhost:5000
 ```
 
 Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
@@ -291,6 +294,61 @@ rollback pudiera usarlo — el rollback fallaba justo cuando hacía falta.
 que el código parece correcto: se publica una imagen que arranque pero no responda al
 healthcheck, se despliega, y se verifica que el servicio vuelve solo a la versión
 anterior.
+
+### Detrás de un Traefik existente (VPS)
+
+Para un servidor que **ya tiene un Traefik** con Let's Encrypt en el 80/443 (el VPS compartido con
+n8n), `compose.traefik.yml` se aplica **encima** de `docker-compose.deploy.yml`: las imágenes salen de
+GHCR (en el servidor no se construye nada) y el stack queda detrás de ese Traefik sin tocar su
+configuración.
+
+| Qué cambia respecto del compose de despliegue | Por qué |
+|---|---|
+| **Ningún puerto publicado** | Docker se salta firewalld/ufw con los puertos publicados |
+| **Solo la UI entra a la red de Traefik**, con basic auth | La UI es cliente **servidor-a-servidor** de la API (`requests` desde el proceso de NiceGUI: el navegador nunca la llama) y no tiene login propio |
+| API y Postgres en `all_in_django-net` | No son alcanzables desde Traefik: `/admin/` y `/api/token/` no quedan en internet |
+| `mem_limit` 160 / 512 / 320 MiB (db / api / ui) | VPS compartido. Se ajustan con `DB_MEM_LIMIT`, `API_MEM_LIMIT` y `UI_MEM_LIMIT` en el `.env` |
+| 1 worker de gunicorn y Postgres con `shared_buffers=32MB` | Cada worker carga pandas + scikit-learn + seaborn |
+| Un único `.env` (se anula `env_file: .env.docker`) | El servidor no tiene `.env.docker` |
+
+Variables del `.env` además de las de `.env.docker.example` (en **negrita** las obligatorias):
+
+| Variable | Para qué |
+|---|---|
+| `COMPOSE_PATH_SEPARATOR=:` y `COMPOSE_FILE=docker-compose.deploy.yml:compose.traefik.yml` | Un `docker compose up` a secas aplica siempre el override, nunca el compose base con puertos |
+| **`IMAGE_TAG`** | Semver publicado en GHCR, sin `v` (p. ej. `2.1.0`) |
+| **`ALL_IN_DJANGO_HOST`**, **`TRAEFIK_NETWORK`** | Nombre público y red de Docker donde vive el Traefik (`docker network ls`) |
+| **`ALL_IN_DJANGO_BASIC_AUTH`** | `usuario:hash` (`openssl passwd -apr1`) **entre comillas simples**, para que Compose no interprete los `$` del hash |
+| **`UI_STORAGE_SECRET`** | Firma la cookie de sesión de NiceGUI (`openssl rand -hex 24`) |
+| `ALLOWED_HOSTS` | Debe incluir `api` (el Host con el que llama la UI) y `localhost` (el del healthcheck); el default del override ya los trae |
+| `SECURE_HTTPS` | Déjalo en **`False`** (ver el aviso de abajo) |
+
+`SECRET_KEY`, `POSTGRES_*` y `API_TOKEN` son los de siempre. `DATABASE_URL` no se define: el compose la
+arma con `POSTGRES_*`.
+
+```bash
+git clone --branch v2.1.0 https://github.com/NicolasAndresCL/All_in_Django.git /opt/all_in_django
+cd /opt/all_in_django
+docker volume create all_in_django_pgdata          # UNA vez: el volumen es external
+# crear el .env (modo 600) con las variables de arriba; API_TOKEN provisional hasta el paso 2
+docker compose config | grep -c published          # debe dar 0
+docker compose pull
+docker compose up -d --wait db api                 # 1. base y API (migra sola)
+docker compose exec -T api python manage.py createsuperuser --noinput --username nico --email nico@example.invalid
+docker compose exec -T api python manage.py drf_create_token nico   # 2. su salida es el API_TOKEN del .env
+docker compose up -d --wait                        # 3. ahora la UI, con el token ya puesto
+```
+
+Para actualizar: `git fetch --tags && git checkout vX.Y.Z`, el `IMAGE_TAG` nuevo en el `.env`, `pull` y
+`up -d --wait`, con un `pg_dump -Fc` antes: el entrypoint migra en cada arranque y volver a una imagen
+vieja tras una migración nueva puede fallar. **`docker compose down` conserva los datos** (el volumen es
+`external`); **`docker volume rm all_in_django_pgdata` los borra**.
+
+> **Ojo con `SECURE_HTTPS`:** en este despliegue debe quedar en `False`. La UI llama a la API por
+> `http://api:8000` (red interna, sin `X-Forwarded-Proto`) y, con `SECURE_SSL_REDIRECT`, Django contesta
+> 301 a `https://api:8000`, donde gunicorn no habla TLS: la UI se queda sin API **con los healthchecks en
+> verde**. Solo tendría sentido activarlo si la API se expusiera por su cuenta detrás de TLS y la UI
+> dejara de llamarla por HTTP interno.
 
 ### Terraform (AWS) y Helm (Kubernetes)
 
@@ -611,6 +669,11 @@ Detalles en [`nicegui_ui/README.md`](nicegui_ui/README.md).
 Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
 `nicegui_ui/.env`). Créalo con `python manage.py drf_create_token <usuario>`.
 
+La imagen de la UI fija `TZ=America/Santiago`: «hoy» y «la semana actual» los calcula la UI con
+`date.today()` (calendario, LiveOps y tareas) y un contenedor corre en UTC, así que pasadas las
+20-21 h en Chile ofrecía el día siguiente. La API no lo necesita: Django fija `TZ` desde
+`TIME_ZONE` al cargar `settings`.
+
 Si algo falla, la vista de Inicio **dice qué falla**, no siempre lo mismo: falta de token,
 token rechazado (típico cuando es de otra base de datos: se creó en SQLite y la API ya
 corre sobre Postgres), **429 por rate limit** —que no es un problema de credenciales— o la
@@ -734,7 +797,9 @@ Endurecimiento aplicado:
 - **`SECURE_HTTPS=True`** (solo detrás de TLS real) activa: `SECURE_SSL_REDIRECT` (con
   `/healthz/` exento para los healthchecks), HSTS (1 año, subdominios, preload) y cookies
   `Secure` de sesión/CSRF. Con esto `manage.py check --deploy` queda **sin warnings**.
-  En local/Compose se deja apagado porque se sirve HTTP plano.
+  En local/Compose se deja apagado porque se sirve HTTP plano. **Tampoco con un TLS que solo
+  cubra a la UI** (Traefik delante de la UI, ver [Detrás de un Traefik existente](#detrás-de-un-traefik-existente-vps)):
+  la UI llama a la API por HTTP interno y el redirect la deja sin API.
 
 ## Tests
 
@@ -749,8 +814,9 @@ pytest --cov=apps --cov=core --cov=nicegui_ui --cov-report=term-missing
 
 # Todo lo que verifica el CI, en el mismo orden (correr ANTES de commitear):
 .\scripts\verificar.ps1
-.\scripts\verificar.ps1 -Rapido       # salta los pasos con Docker (lo más lento)
+.\scripts\verificar.ps1 -Rapido       # salta los pasos que levantan contenedores (lo más lento)
 # El paso de Terraform usa el binario si está en el PATH; si no, la imagen hashicorp/terraform.
+# El del override de Traefik (3c) solo usa `docker compose config`: corre también con -Rapido.
 ```
 
 ### Lo que verifica el CI
@@ -764,6 +830,7 @@ algo que un lint de segundos ya iba a rechazar:
 | `test` | pytest en SQLite con **`--cov-fail-under=80`** (la cobertura es condición de fallo, no un número decorativo) y validación del **esquema OpenAPI** con `--fail-on-warn` |
 | `test-postgres` | la misma suite contra **Postgres 18 real** (servicio de Actions), con `-rs` para que los saltados sean visibles |
 | `deploy-check` | `manage.py check --deploy --fail-level WARNING` con `DEBUG=False` + `SECURE_HTTPS=True` y una `SECRET_KEY` efímera |
+| `compose-traefik` | `compose.traefik.yml` sobre `docker-compose.deploy.yml` con `docker compose config` (no levanta nada): resuelve sin `.env.docker`, **0 puertos publicados**, solo la UI en la red de Traefik, todos con `mem_limit` y `SECURE_HTTPS=False` por defecto (`scripts/comprobar_override_traefik.py`, el mismo que usa `verificar.ps1`) |
 | `terraform` | `fmt -check`, `init -backend=false`, `validate` y **`terraform test`** con proveedores simulados: RDS privado, token de la UI en el cloud-init, `image_tag` ≠ `latest`. Sin credenciales AWS ni recursos de pago |
 | `build` | construye ambas imágenes, **levanta el stack** esperando a que los tres servicios queden `healthy` y le **pasa la colección Postman con Newman** |
 
@@ -842,4 +909,4 @@ Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
 - Portafolio: [nicolasandrescl.github.io](https://nicolasandrescl.github.io/)
 - Correo: [nicolas.cano.leal@gmail.com](mailto:nicolas.cano.leal@gmail.com)
 
-All in Django v2.0.1 · 21 de octubre de 2026
+All in Django v2.1.0 · 26 de octubre de 2026

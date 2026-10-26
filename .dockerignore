@@ -25,6 +25,7 @@ staticfiles/
 nicegui_ui/
 infra/
 docker-compose*.yml
+compose.traefik.yml
 *.md
 .vscode/
 .idea/
