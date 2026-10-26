@@ -7,7 +7,10 @@ name: CI
 #   lint -> test ------> build (build + arranque + pruebas HTTP con newman)
 #        -> test-postgres
 #        -> deploy-check
+#        -> compose-traefik   (override del VPS: compose config, 0 puertos publicados; no levanta nada)
 #        -> terraform   (fmt + validate + test con proveedores simulados; sin credenciales)
+#
+# `build` espera a test, test-postgres, deploy-check y compose-traefik (terraform no lo condiciona).
 
 on:
   push:
@@ -175,9 +178,40 @@ jobs:
           export SECRET_KEY
           python manage.py check --deploy --fail-level WARNING
 
+  compose-traefik:
+    name: override de Traefik (compose config)
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # compose.traefik.yml es lo que se despliega en el VPS detras de un Traefik que ya
+      # existe. `config` solo interpola y fusiona los dos compose: no arranca nada, asi que
+      # valen valores de mentira. Y el .env.docker NO existe en el checkout (esta en
+      # .gitignore): si el override dejara de anular el `env_file` del compose base,
+      # `config` fallaria aqui.
+      - name: Entorno de prueba
+        run: |
+          {
+            echo "IMAGE_TAG=0.0.0"
+            echo "SECRET_KEY=ci"
+            echo "POSTGRES_PASSWORD=ci"
+            echo "API_TOKEN=ci"
+            echo "UI_STORAGE_SECRET=ci"
+            echo "ALL_IN_DJANGO_HOST=allindjango.example.test"
+            echo "TRAEFIK_NETWORK=traefik_ci"
+            echo "ALL_IN_DJANGO_BASIC_AUTH='ci:\$apr1\$x\$y'"
+          } > .env.vps-ci
+      # Las comprobaciones viven en scripts/comprobar_override_traefik.py, que usa tambien el
+      # paso 3c de scripts/verificar.ps1: una sola definicion de "el override esta bien".
+      - name: El override resuelve, no publica puertos y solo la UI toca Traefik
+        run: |
+          c="docker compose --env-file .env.vps-ci -f docker-compose.deploy.yml -f compose.traefik.yml"
+          $c config --quiet
+          $c config --format json | python3 scripts/comprobar_override_traefik.py
+
   build:
     name: build + arranque del stack
-    needs: [test, test-postgres, deploy-check]
+    needs: [test, test-postgres, deploy-check, compose-traefik]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

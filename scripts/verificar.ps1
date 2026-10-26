@@ -108,6 +108,24 @@ Ejecutar 'terraform fmt + validate + test' {
     Write-Host "  --  terraform fmt + validate + test (saltado por -Rapido: sin terraform en el PATH)" -ForegroundColor DarkGray
 }
 
+# 3c) override de Traefik del VPS (compose.traefik.yml), gemelo del job `compose-traefik` del CI.
+#     `docker compose config` solo interpola y fusiona los dos compose: no necesita el daemon
+#     (corre incluso con -Rapido) ni secretos reales, asi que los valores de mentira van a un
+#     archivo FUERA del repo. Las comprobaciones viven en scripts\comprobar_override_traefik.py,
+#     compartido con el job: "el override esta bien" tiene una sola definicion.
+Ejecutar 'override de Traefik (compose config)' {
+    $envVps = Join-Path $env:TEMP 'verificar_override_traefik.env'
+    @(
+        'IMAGE_TAG=0.0.0', 'SECRET_KEY=ci', 'POSTGRES_PASSWORD=ci', 'API_TOKEN=ci',
+        'UI_STORAGE_SECRET=ci', 'ALL_IN_DJANGO_HOST=allindjango.example.test',
+        'TRAEFIK_NETWORK=traefik_ci', 'ALL_IN_DJANGO_BASIC_AUTH=''ci:$apr1$x$y'''
+    ) | Set-Content -Path $envVps -Encoding ascii
+    $cfg = @('compose', '--env-file', $envVps, '-f', 'docker-compose.deploy.yml', '-f', 'compose.traefik.yml')
+    docker @cfg config --quiet
+    if ($LASTEXITCODE -ne 0) { return }
+    docker @cfg config --format json | & $py scripts\comprobar_override_traefik.py
+}
+
 # 4) smoke: que el stack ARRANQUE, no solo que las imagenes compilen.
 if (-not $Rapido) {
     Ejecutar 'build + arranque del stack' {
