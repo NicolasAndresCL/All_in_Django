@@ -7,11 +7,39 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 
 ## [Sin publicar]
 
+## [2.1.0] — 2026-10-26
+
+Despliegue en un servidor que ya tiene un Traefik (el VPS compartido con n8n). La aplicación no cambia,
+salvo la zona horaria de la UI.
+
+### Añadido
+
+- `compose.traefik.yml`: override de `docker-compose.deploy.yml` para desplegar detrás de un Traefik
+  existente. No publica ningún puerto; solo la UI entra a la red de Traefik (con basic auth) y la API y
+  Postgres quedan en una red propia (`all_in_django-net`); `mem_limit` por servicio ajustable desde el
+  `.env` (160 / 512 / 320 MiB); 1 worker de gunicorn; Postgres con memoria acotada; y un único `.env`
+  (anula el `env_file: .env.docker` del compose base). Documentado en el README («Detrás de un Traefik
+  existente»).
+- CI: job `compose-traefik`, que resuelve el override con `docker compose config` (no levanta nada) y
+  comprueba con `scripts/comprobar_override_traefik.py` que no publica puertos, que solo la UI toca la red
+  de Traefik, que todos los servicios tienen `mem_limit` y que `SECURE_HTTPS` es `False` por defecto. Su
+  gemelo local es el paso 3c de `scripts/verificar.ps1`. El job `build` espera ahora a este.
+
 ### Cambiado
 
 - Dependabot ya no abre PRs de pip que solo suben la versión mínima (`versioning-strategy:
   increase-if-necessary`). Con `>=` en los requirements el CI ya instala siempre la última versión,
   así que esos PRs no cambiaban lo que se prueba y llegaban cada semana.
+- `.dockerignore` excluye `compose.traefik.yml` de la imagen de la API.
+- README y `.env.docker.example` avisan de que `SECURE_HTTPS=True` deja a la UI sin API mientras la llame
+  por HTTP interno (`http://api:8000`): Django contesta 301 a `https://api:8000`, donde gunicorn no habla
+  TLS.
+
+### Corregido
+
+- La imagen de la UI fija `TZ=America/Santiago`. Calendario, LiveOps y Tareas calculan «hoy» y «la semana
+  actual» con `date.today()` y el contenedor corría en UTC: pasadas las 20-21 h en Chile ofrecía el día
+  siguiente. Afecta también a Docker Desktop y al CD con Jenkins, que usan la misma imagen.
 
 ## [2.0.1] — 2026-10-21
 
@@ -95,7 +123,8 @@ Primera versión publicada en GHCR (`all-in-django-api` y `all-in-django-ui`).
 - IaC: Terraform (EC2 + RDS) y chart de Helm.
 - Esquema OpenAPI generado con drf-spectacular y colección Postman que se valida contra un stack efímero.
 
-[Sin publicar]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.0.1...HEAD
+[Sin publicar]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/NicolasAndresCL/All_in_Django/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/NicolasAndresCL/All_in_Django/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/NicolasAndresCL/All_in_Django/releases/tag/v1.0.0
