@@ -15,6 +15,11 @@ RUN pip install --prefix=/install -r requirements.txt
 FROM python:3.14-slim AS runtime
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app UI_HEADLESS=1
+# Zona horaria: calendario, liveops y tareas usan date.today() para "hoy" y "la semana actual",
+# y un contenedor corre en UTC: pasadas las 20-21 h en Chile ofrecia el dia siguiente. La slim
+# trae tzdata (comprobado: TZ=America/Santiago da -03 -0300). La API no lo necesita: Django
+# fija TZ desde TIME_ZONE al cargar settings.
+ENV TZ=America/Santiago
 WORKDIR /app
 
 COPY --from=builder /install /usr/local
