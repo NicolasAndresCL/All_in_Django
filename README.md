@@ -1,12 +1,12 @@
 # 🧩 All in Django — API Django/DRF + UI NiceGUI con IaC de punta a punta
 
 [![CI](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml)
-![Versión](https://img.shields.io/badge/versi%C3%B3n-2.1.0-blue)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-2.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.14-3776AB)
 
 | | |
 |---|---|
-| **Versión** | 2.1.0 |
+| **Versión** | 2.2.0 |
 | **Fecha** | 26 de octubre de 2026 |
 | **Autor** | [Nicolás Andrés Cano Leal](#autor) |
 
@@ -47,10 +47,10 @@ all_in_django/
 │   ├── tv/                  # scraper de canales (solo lectura)
 │   └── extras/              # commands: importar_all_in_one, reloj, login_menu
 ├── nicegui_ui/             # UI NiceGUI (cliente HTTP de la API) — ver su README
-│   ├── main.py  layout.py  api_client.py  run_ui.py  run_app.bat
+│   ├── main.py  layout.py  tema.py  plotly_tema.py  api_client.py  run_ui.py  run_app.bat
 │   ├── views/               # una vista por dominio (tareas: dashboard con 6 gráficos Plotly)
 │   ├── Dockerfile           # imagen de la UI
-│   └── tests/               # cliente, charts, gantt y smoke de páginas (responses + nicegui.testing)
+│   └── tests/               # cliente, charts, gantt, tema, páginas, interacción y visual (Playwright)
 ├── Dockerfile  docker/entrypoint.sh  docker-compose.yml  .dockerignore  .env.docker.example
 ├── docker-compose.deploy.yml # CD: imágenes de GHCR, sin build
 ├── compose.traefik.yml      # override del VPS: detrás de un Traefik existente, 0 puertos publicados
@@ -238,8 +238,8 @@ Lo que el pipeline hace por ti, y antes no:
 
 ```bash
 # Equivalente manual (lo que ejecuta el Jenkinsfile):
-IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+IMAGE_TAG=2.2.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+IMAGE_TAG=2.2.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 ```
 
 > Ya no se pasa `-p`: el nombre de proyecto (`all_in_django`) está fijado con `name:` dentro de
@@ -277,11 +277,11 @@ ensaya nunca.
 
 ```bash
 docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
-docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.1.0
-docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.1.0
-docker push localhost:5000/nicolasandrescl/all-in-django-api:2.1.0
-docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.1.0
-# y lanzar el job con IMAGE_TAG=2.1.0  REGISTRY=localhost:5000
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.2.0
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.2.0
+docker push localhost:5000/nicolasandrescl/all-in-django-api:2.2.0
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.2.0
+# y lanzar el job con IMAGE_TAG=2.2.0  REGISTRY=localhost:5000
 ```
 
 Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
@@ -316,7 +316,7 @@ Variables del `.env` además de las de `.env.docker.example` (en **negrita** las
 | Variable | Para qué |
 |---|---|
 | `COMPOSE_PATH_SEPARATOR=:` y `COMPOSE_FILE=docker-compose.deploy.yml:compose.traefik.yml` | Un `docker compose up` a secas aplica siempre el override, nunca el compose base con puertos |
-| **`IMAGE_TAG`** | Semver publicado en GHCR, sin `v` (p. ej. `2.1.0`) |
+| **`IMAGE_TAG`** | Semver publicado en GHCR, sin `v` (p. ej. `2.2.0`) |
 | **`ALL_IN_DJANGO_HOST`**, **`TRAEFIK_NETWORK`** | Nombre público y red de Docker donde vive el Traefik (`docker network ls`) |
 | **`ALL_IN_DJANGO_BASIC_AUTH`** | `usuario:hash` (`openssl passwd -apr1`) **entre comillas simples**, para que Compose no interprete los `$` del hash |
 | **`UI_STORAGE_SECRET`** | Firma la cookie de sesión de NiceGUI (`openssl rand -hex 24`) |
@@ -327,7 +327,7 @@ Variables del `.env` además de las de `.env.docker.example` (en **negrita** las
 arma con `POSTGRES_*`.
 
 ```bash
-git clone --branch v2.1.0 https://github.com/NicolasAndresCL/All_in_Django.git /opt/all_in_django
+git clone --branch v2.2.0 https://github.com/NicolasAndresCL/All_in_Django.git /opt/all_in_django
 cd /opt/all_in_django
 docker volume create all_in_django_pgdata          # UNA vez: el volumen es external
 # crear el .env (modo 600) con las variables de arriba; API_TOKEN provisional hasta el paso 2
@@ -659,12 +659,12 @@ API"*. Equivale a:
 python nicegui_ui\run_ui.py                # levanta API (si hace falta) + UI
 ```
 
-La UI usa el puerto **8501** por defecto y, si está ocupado, salta al siguiente libre. Tema
-**VS Code Dark High Contrast**; tablas compactas con scroll y gráficos Plotly con barra de
-herramientas completa + **pantalla completa**. Incluye: **impresión PDF** (estudio, laboral,
-maestro y equipo), **Gantt** semanal (personal y de equipo), **copiar/basar una semana en
-otra**, **grilla semanal editable** de turnos y **autocompletado** de proyecto/tarea.
-Detalles en [`nicegui_ui/README.md`](nicegui_ui/README.md).
+La UI usa el puerto **8501** por defecto y, si está ocupado, salta al siguiente libre. Desde la
+2.2.0 es **100 % responsiva** (celular, tablet y escritorio) y su tema por defecto es **Aurora
+austral** (ver más abajo); tablas compactas con scroll interno y gráficos Plotly con **pantalla
+completa**. Incluye: **impresión PDF** (estudio, laboral, maestro y equipo), **Gantt** semanal
+(personal y de equipo), **copiar/basar una semana en otra**, **grilla semanal editable** de turnos
+y **autocompletado** de proyecto/tarea. Detalles en [`nicegui_ui/README.md`](nicegui_ui/README.md).
 
 Como la API exige token, la UI necesita **`API_TOKEN`** (variable de entorno o
 `nicegui_ui/.env`). Créalo con `python manage.py drf_create_token <usuario>`.
@@ -682,14 +682,52 @@ sin reiniciar la UI.
 
 ### Identidad visual y temas
 
-Sobre el tema base (VS Code Dark High Contrast) cada página tiene **un personaje de fondo
-y un color de aura propios**. El reparto es semántico: Nami (la navegante) en Calendario,
-Jinbe (el timonel) en LiveOps, Zoro en Tareas, Robin (la arqueóloga) en Notas, Brook en TV
-y el sombrero colgado en Apagado. La portada abre con la tripulación al completo.
+La UI tiene **dos estilos** que comparten estructura, y un **selector de tema** en la esquina
+superior derecha para elegir entre ellos. La elección se guarda en `app.storage.user`, es decir
+**por navegador**, y sobrevive a reiniciar la UI.
 
-**Selector de tema** en la esquina superior derecha: los 16 personajes como temas
-completos, más **Auto** (cada página con el suyo). La elección se guarda en
-`app.storage.user`, es decir **por navegador**, y sobrevive a reiniciar la UI.
+| Opción del selector | Estilo | Qué se ve |
+|---|---|---|
+| **Aurora austral** (por defecto desde la 2.2.0) | `aurora` | Cielo nocturno del sur con auroras en movimiento, vidrio esmerilado, cifras en degradado |
+| Uno de los **16 personajes** | `cubierta` | El personaje como marca de agua con su aura, madera de cubierta y su color en toda la interfaz |
+| **Auto** | `cubierta` | El personaje propio de cada página (Nami en Calendario, Zoro en Tareas…) |
+
+#### Aurora austral
+
+Un cielo nocturno del extremo sur de Chile, donde la aurora austral se deja ver en invierno:
+
+- **Cortinas de aurora** verde → violeta → rosa (`body::after`): tres elipses difuminadas que se
+  deforman despacio en un ciclo de 28 s. Solo se anima `transform` sobre una capa ya difuminada,
+  que el navegador mueve en el compositor sin repintar: es barato también en un celular.
+- **Estrellas** que titilan (`body::before`), más densas arriba y que se apagan hacia abajo.
+- El fondo es **azul noche** (`#050814`), no negro: sobre negro puro el vidrio no se nota.
+- **Vidrio** en tarjetas, tablas y campos (velo azul noche al 84 %), con un reflejo verde-violeta
+  en la esquina y un filo de luz arriba; al pasar el ratón se encienden. El desenfoque
+  (`backdrop-filter`) queda solo en la barra superior y el menú: con el cielo animado detrás, el
+  navegador tendría que re-desenfocar cada tarjeta en cada fotograma (medido: una captura de página
+  completa a 360 px no terminaba en 30 s).
+- Barra superior de vidrio con un **filo de 2 px en degradado de aurora**; menú lateral a juego.
+- **Cifras en degradado** verde → violeta (los dos extremos superan 4,5:1 sobre la superficie).
+- Todo **procedural** (gradientes CSS): 0 KB de imágenes nuevas.
+- Con `prefers-reduced-motion: reduce` el cielo queda quieto; con `forced-colors` las cifras vuelven
+  a color de sistema.
+
+**Contraste medido** (WCAG 2.1, sobre la superficie de las tarjetas `#0c1222`): texto principal
+15,5:1, secundario 9,8:1, ticks 6,1:1, acento verde 11,8:1, violeta 6,9:1, rosa 7,1:1. Los
+**botones primarios** llevan tinta oscura en todos los temas: el blanco sobre los acentos daba
+1,3–3,4:1 (suspende AA) y la tinta oscura da 5,6–14:1.
+
+¿Por qué un tema nuevo por defecto y no reemplazar los personajes? Los personajes se quedan: son
+identidad y el selector los sigue ofreciendo tal cual. Pero en un celular la ilustración a 84 vh
+compite con datos que ya tienen poco espacio; el cielo da la misma sensación de lugar sin ocupar
+nada.
+
+#### Estilo cubierta (los 16 personajes)
+
+Cada página tiene **un personaje de fondo y un color de aura propios** en modo Auto. El reparto es
+semántico: Nami (la navegante) en Calendario, Jinbe (el timonel) en LiveOps, Zoro en Tareas, Robin
+(la arqueóloga) en Notas, Brook en TV y el sombrero colgado en Apagado. La portada abre con la
+tripulación al completo (en ambos estilos).
 
 El personaje se dibuja como marca de agua a plena presencia —se le ve la cara— y el aura
 sale de un `drop-shadow` calculado sobre su propia silueta, no de un rectángulo de color.
@@ -700,7 +738,8 @@ El color del personaje no se queda en el fondo: **tiñe toda la interfaz**. La b
 superior y el menú lateral arrancan del acento y se apagan a negro antes de la mitad; las
 **tarjetas** llevan ese mismo degradado, borde y realce superior (y se encienden al pasar
 el ratón); tablas, separadores, gráficos y el menú del selector siguen el mismo color. Las
-cifras de las métricas van en `text-primary`, que es el acento activo.
+cifras de las métricas van en `aid-cifra`, que pinta con el acento activo (no `text-primary`:
+es una utilidad `!important` de Quasar y el degradado del estilo aurora no podría pisarla).
 
 Debajo de todo hay una **cubierta de barco**: una madera tenue de tablones, juntas y
 vetas. Es **procedural** —gradientes CSS apilados, 0 KB de assets—, escala a cualquier
@@ -729,8 +768,9 @@ arriba abajo y el CSS crudo es el último recurso. Todo vive en
 |---|---|---|
 | `default_props` / `default_classes` | Aspecto por tipo de elemento (campos `outlined dense`, tablas, tarjetas), aplicado UNA vez al arrancar | `tema.aplicar_defaults()` |
 | `ui.query('body')` | Estilado de la página: variables del tema **y la cubierta de madera** (la guía marca `add_head_html` para esto como antipatrón; aquí además es lo único que funciona) | `tema.aplicar_a_pagina()` |
-| Clases **Tailwind** | Composición y espaciado en cada vista | vistas y `layout.py` |
-| `ui.add_head_html(..., shared=True)` | SOLO lo inexpresable en Python: `body::before/::after` con `mask-image` y `drop-shadow`, y los `@keyframes` del rebote y del mecido | `tema.instalar()` |
+| Clases **Tailwind** | Composición, espaciado y **responsividad** (`grid-cols-1 md:grid-cols-2 2xl:grid-cols-3`) | vistas y `layout.py` (`REJILLA_*`) |
+| `ui.add_head_html(..., shared=True)` | SOLO lo inexpresable en Python: `body::before/::after` (marca de agua, estrellas, aurora), `@keyframes`, `:fullscreen`, `@media (hover: none)` y el estilo interno de Plotly | `tema.instalar()` |
+| Plantilla Plotly `aid` | Tinta, rejilla, leyenda, paleta y márgenes de TODOS los gráficos | `plotly_tema.py` |
 
 Gracias a los defaults globales desaparecieron **21 repeticiones** de
 `.props("outlined dense")` en las vistas, y el CSS se inyecta **una sola vez** en lugar
@@ -746,7 +786,39 @@ Reconstruye el canal alfa (los PNG de origen traen el damero de "fondo transpare
 horneado), recorta, calcula el acento y la opacidad de cada imagen y escribe
 `nicegui_ui/static/fondos/` (+ `mini/` para la banda y el selector). Imprime las líneas
 de `tema.TEMAS` listas para pegar: esos valores se derivan de las imágenes, no se eligen
-a ojo.
+a ojo. La entrada `aurora` no sale de aquí (no tiene imagen): se mantiene a mano en
+`tema.py`, y el test que exige un tema por cada PNG la ignora.
+
+### Responsividad y gráficos (2.2.0)
+
+La UI se usa desde el celular y la tablet, así que se auditó con Playwright sobre el stack real
+(datos reales: 679 tareas, 38 proyectos) midiendo cada gráfico en cinco anchos. **Ancho de cada
+gráfico del dashboard de Tareas**, antes y después:
+
+| Ancho de pantalla | Antes | Después | Columnas |
+|---|---|---|---|
+| 360 px (móvil) | 104 px | **318 px** | 2 → 1 |
+| 412 px (móvil) | 130 px | **370 px** | 2 → 1 |
+| 768 px (tablet) | 308 px | **334 px** | 2 → 2 (drawer cerrado) |
+| 1280 px (portátil) | 414 px | **432 px** | 2 → 2 |
+| 1920 px (escritorio) | 516 px | **481 px** ×3 | 2 → 3 (contenido hasta 1600 px) |
+
+| Hallazgo | Solución |
+|---|---|
+| `ui.grid(columns=2)` fijo: 104 px por gráfico a 360 px | `rejilla_graficos()`: 1 / 2 (`md`) / 3 (`2xl`) columnas |
+| Barra de Plotly de 11 iconos partida en 2-3 filas; el botón de pantalla completa la pisaba | 4 botones, solo al pasar el ratón, oculta en táctil y < 640 px; pantalla completa en la cabecera de la tarjeta |
+| Gantt con 20 ticks fijos (ilegibles < 420 px) y leyenda vertical comiendo ⅓ del ancho | Eje de hora real (ticks adaptativos), leyenda horizontal, días abreviados, siempre los 7 días |
+| Colorbar redundante y nombres largos en «Esfuerzo» | Una serie, un color; nombres truncados con el completo en el tooltip; cola en «Otros» |
+| Alturas fijas en px (tiras altas y flacas en móvil) | `aid-alto-s/m/l/xl` con `clamp()` sobre `vw` |
+| El svg no seguía al contenedor al cerrar el drawer | Lo resuelve el `ResizeObserver` del componente `ui.plotly` (verificado: 646 = 646 px tras cerrar) |
+| Gantt sin plantilla (ejes en `#2a3f5f` sobre negro); sunburst con cientos de rebanadas | Plantilla `aid` para todos; **treemap** con colas plegadas |
+| Drawer abierto como overlay en cada navegación < 1024 px; filas `no-wrap` en LiveOps y Notas | Drawer `show-if-above`; rejillas que apilan en móvil |
+
+Lo que ya estaba bien y se conservó: ningún ancho tenía scroll horizontal de página y ningún
+gráfico desbordaba su tarjeta. Los gráficos modernos se eligieron con la skill `dataviz`
+(forma según la tarea del dato, paleta validada con su script para fondo oscuro, una serie =
+un color, ≤ 7 categorías con color + «Otros»): **treemap** para la distribución y un
+**calendario de actividad** (semana × día) en vez del área diaria.
 
 ### Apagado programado
 
@@ -877,10 +949,13 @@ son `async` (`asyncio_mode=auto`).
 ### Verificación visual (marca `visual`, fuera del CI)
 
 `nicegui_ui/tests/test_visual.py` levanta la UI de verdad junto a una API falsa y la abre en
-**Chromium con Playwright** para **medir**: que la cubierta llega a pintarse
-(`background-image` del body), que el header no acaba con el color primario, el **contraste
-WCAG** del texto sobre las tarjetas (≥ 4,5:1) y que el rebote se **apaga** en hover y con
-`prefers-reduced-motion`. Es lo único que comprueba que el CSS *gana la cascada*: `test_tema.py`
+**Chromium con Playwright** para **medir**: que el fondo llega a pintarse
+(`background-image` del body) y es aurora por defecto, que las cortinas se mueven, que el
+header no acaba con el color primario, el **contraste WCAG** del texto sobre las tarjetas y del
+botón primario (≥ 4,5:1), que el rebote se **apaga** en hover y con `prefers-reduced-motion`, y
+la **responsividad**: a 360, 412 y 768 px los gráficos ocupan ≥ 90 % del ancho útil sin scroll
+horizontal, el drawer arranca cerrado en móvil, el svg sigue al contenedor al cerrar el drawer
+y la pantalla completa ocupa la ventana. Es lo único que comprueba que el CSS *gana la cascada*: `test_tema.py`
 mira la hoja como texto, y un `!important` escrito no prueba que se aplique.
 
 Queda fuera del `pytest` normal y del CI porque exige descargar el navegador (~150 MB):
@@ -909,4 +984,4 @@ Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
 - Portafolio: [nicolasandrescl.github.io](https://nicolasandrescl.github.io/)
 - Correo: [nicolas.cano.leal@gmail.com](mailto:nicolas.cano.leal@gmail.com)
 
-All in Django v2.1.0 · 26 de octubre de 2026
+All in Django v2.2.0 · 26 de octubre de 2026
