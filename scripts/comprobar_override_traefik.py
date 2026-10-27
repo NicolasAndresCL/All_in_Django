@@ -7,6 +7,10 @@ Lee el JSON por stdin:
     docker compose --env-file <env> -f docker-compose.deploy.yml -f compose.traefik.yml \
         config --format json | python scripts/comprobar_override_traefik.py
 
+    # con compose.n8n.yml encima (red interna con n8n), ademas:
+    ... -f compose.traefik.yml -f compose.n8n.yml config --format json \
+        | python scripts/comprobar_override_traefik.py --con-n8n
+
 Sale con 1 y dice que fallo. Salida en ASCII (la consola de Windows es cp1252).
 """
 
@@ -46,14 +50,48 @@ def revisar(cfg: dict) -> list[str]:
     return errores
 
 
+# compose.n8n.yml: la red compartida con n8n lleva SOLO la API, con un alias estable. Si entrara
+# Postgres, el worker de n8n podria hablarle directo a la base, saltandose la API y su token.
+EN_RED_DE_N8N = ["api"]
+ALIAS_N8N = "all-in-django-api"
+
+
+def revisar_n8n(cfg: dict) -> list[str]:
+    """Incumplimientos de compose.n8n.yml aplicado encima (lista vacia = esta bien)."""
+    servicios = cfg["services"]
+    red = cfg.get("networks", {}).get("n8n")
+    if red is None:
+        return ["no hay red 'n8n': falta aplicar compose.n8n.yml"]
+
+    errores = []
+    if not red.get("external"):
+        errores.append("la red 'n8n' debe ser external (se crea una vez con `docker network create --internal`)")
+    en_n8n = sorted(n for n, s in servicios.items() if "n8n" in (s.get("networks") or {}))
+    if en_n8n != EN_RED_DE_N8N:
+        errores.append(f"en la red de n8n debe estar solo {EN_RED_DE_N8N} y hay {en_n8n}")
+    alias = ((servicios["api"].get("networks") or {}).get("n8n") or {}).get("aliases") or []
+    if ALIAS_N8N not in alias:
+        errores.append(f"la api no tiene el alias {ALIAS_N8N!r} en la red de n8n (lo usan los workflows)")
+    hosts = servicios["api"].get("environment", {}).get("ALLOWED_HOSTS", "")
+    if ALIAS_N8N not in hosts.split(","):
+        errores.append(f"ALLOWED_HOSTS no incluye {ALIAS_N8N!r}: Django responderia 400 a n8n")
+    # El override de n8n no debe deshacer lo del de Traefik.
+    if "traefik" in (servicios["api"].get("networks") or {}):
+        errores.append("la api quedo en la red de Traefik")
+    return errores
+
+
 def main() -> int:
+    con_n8n = "--con-n8n" in sys.argv[1:]
     # Bytes + utf-8-sig: el pipe de PowerShell 5.1 hacia un programa nativo antepone un BOM
     # (segun $OutputEncoding) y json.load lo rechaza. En el runner Linux no hay BOM y da igual.
-    errores = revisar(json.loads(sys.stdin.buffer.read().decode("utf-8-sig")))
+    cfg = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
+    errores = revisar(cfg) + (revisar_n8n(cfg) if con_n8n else [])
     for error in errores:
         print(f"FALLO: {error}")
     if not errores:
-        print("OK: sin puertos publicados, solo la ui en la red de Traefik, todos con mem_limit")
+        print("OK: sin puertos publicados, solo la ui en la red de Traefik, todos con mem_limit"
+              + ("; solo la api en la red de n8n, con su alias y en ALLOWED_HOSTS" if con_n8n else ""))
     return 1 if errores else 0
 
 

@@ -1,0 +1,38 @@
+# Deja que n8n hable con la API por una red INTERNA dedicada, sin publicarla. Se aplica ENCIMA de
+# docker-compose.deploy.yml + compose.traefik.yml:
+#
+#   COMPOSE_FILE=docker-compose.deploy.yml:compose.traefik.yml:compose.n8n.yml
+#
+# Para que sirve: los workflows «All in Django - *» de vps-infra (n8n/workflows/) registran tareas,
+# notas, turnos y clases por webhook, copian la semana y vigilan la API. En el VPS, compose.traefik.yml
+# deja la API solo en all_in_django-net: n8n no la alcanza. Las alternativas eran peores:
+#   - Publicar /api por Traefik: /api/ y /admin/ quedarian en internet (hoy no lo estan).
+#   - Meter n8n en all_in_django-net: el worker de n8n veria tambien el Postgres de la app.
+# Aqui la red compartida tiene SOLO la API y el worker de n8n (n8n-main no la necesita: en queue mode
+# quien ejecuta es el worker), y es `internal`: no tiene salida a internet por si misma.
+#
+# Una vez, antes del primer `up` (es external: este compose no la crea ni la borra):
+#   docker network create --internal n8n-allindjango
+#
+# Variables del .env:
+#   N8N_NETWORK    nombre de esa red (por defecto n8n-allindjango)
+#   ALLOWED_HOSTS  si el .env la define, DEBE incluir all-in-django-api (el Host con que llama n8n);
+#                  sin el, Django responde 400 DisallowedHost a cada peticion de n8n.
+#
+# El token que usa n8n es de un usuario PROPIO (`n8n`), no el API_TOKEN de la UI: se revoca sin
+# dejar a la UI sin API. Ver README -> «Automatizacion con n8n».
+
+services:
+  api:
+    environment:
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api,all-in-django-api}
+    networks:
+      default: {}
+      n8n:
+        # Nombre estable para los workflows: no depende del container_name ni del proyecto.
+        aliases: [all-in-django-api]
+
+networks:
+  n8n:
+    external: true
+    name: ${N8N_NETWORK:-n8n-allindjango}
