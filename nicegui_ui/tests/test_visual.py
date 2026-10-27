@@ -55,6 +55,7 @@ RESPUESTAS = {
     "/api/turnos-equipo/": datos_api.TURNOS_EQUIPO,
     "/api/tareas/": datos_api.TAREAS,
     "/api/tareas/resumen/": datos_api.RESUMEN,
+    "/api/tareas/analitica/": datos_api.ANALITICA,
     "/api/notas/": datos_api.NOTAS,
     "/api/tv/canales/": datos_api.CANALES,
 }
@@ -197,14 +198,24 @@ def _estilo(pagina, selector: str, propiedad: str) -> str:
     )
 
 
-# ─── (1) la cubierta se DIBUJA, no solo se define ────────────────────────────
-def test_la_cubierta_de_madera_llega_a_pintarse(pagina):
+# ─── (1) el fondo se DIBUJA, no solo se define ───────────────────────────────
+def test_el_fondo_llega_a_pintarse(pagina):
     """El fallo original: `background-image` definido y borrado por el shorthand de
-    `bg-black`. Se mide el computed style, que es quien resuelve la cascada."""
+    `bg-black`. Se mide el computed style, que es quien resuelve la cascada. Desde la
+    2.2.0 el tema por defecto es aurora: su cielo tiene tres capas, como la cubierta."""
     imagen = _estilo(pagina, "body", "background-image")
-    assert imagen and imagen != "none", "el body no pinta la cubierta"
-    assert imagen.count("gradient") >= 3, f"la cubierta perdio capas: {imagen[:120]}"
+    assert imagen and imagen != "none", "el body no pinta su fondo"
+    assert imagen.count("gradient") >= 3, f"el fondo perdio capas: {imagen[:120]}"
     assert _estilo(pagina, "body", "background-attachment").startswith("fixed")
+    assert pagina.evaluate("document.body.classList.contains('aid-aurora')"), \
+        "el tema por defecto deberia ser aurora"
+
+
+def test_las_cortinas_de_aurora_se_mueven(pagina):
+    """La capa `body::after` anima `aid-aurora`: si una regla posterior la pisa (la del
+    estilo cubierta no anima `::after`), el cielo queda congelado sin avisar."""
+    nombre = pagina.evaluate("getComputedStyle(document.body, '::after').animationName")
+    assert nombre == "aid-aurora"
 
 
 # ─── (2) el cromo conserva su fondo frente a bg-primary ──────────────────────
@@ -242,9 +253,16 @@ def test_el_rebote_se_apaga_al_pasar_el_raton(pagina):
     imagen.wait_for(timeout=10_000)
     assert imagen.evaluate("el => getComputedStyle(el).animationName") == "aid-rebote"
     imagen.hover()
-    pagina.wait_for_timeout(200)
-    assert imagen.evaluate("el => getComputedStyle(el).animationName") == "none", \
-        "el rebote sigue animando en hover: se pauso en vez de apagarse"
+    # Se espera la condicion (hasta 3 s) en vez de dormir 200 ms: con la maquina cargada
+    # (un build de Docker en paralelo) el hover tardaba mas y el test fallaba en falso.
+    try:
+        imagen.evaluate("""el => new Promise((ok, mal) => {
+            const t0 = performance.now();
+            const mirar = () => getComputedStyle(el).animationName === 'none' ? ok(true)
+                : performance.now() - t0 > 3000 ? mal('sigue animando') : requestAnimationFrame(mirar);
+            mirar(); })""")
+    except Exception:  # noqa: BLE001  (el rechazo llega como Error de Playwright)
+        pytest.fail("el rebote sigue animando en hover: se pauso en vez de apagarse")
 
 
 def test_con_movimiento_reducido_no_se_anima_nada(navegador, ui_viva):
@@ -255,5 +273,139 @@ def test_con_movimiento_reducido_no_se_anima_nada(navegador, ui_viva):
         quieto = pag.locator(".aid-rebote").first
         quieto.wait_for(timeout=10_000)
         assert quieto.evaluate("el => getComputedStyle(el).animationName") == "none"
+    finally:
+        pag.close()
+
+
+# ─── (5) responsividad: medida en el navegador, no supuesta ──────────────────
+MEDIR_GRAFICOS = """
+() => {
+  const col = document.querySelector('.nicegui-content > .nicegui-column');
+  const cs = getComputedStyle(col);
+  const util = col.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const graficos = [...document.querySelectorAll('.aid-graf')].map((g) => {
+    const p = g.querySelector('.js-plotly-plot');
+    const svg = p && p.querySelector('svg.main-svg');
+    return {
+      tarjeta: g.getBoundingClientRect().width,
+      lienzo: p ? p.getBoundingClientRect().width : 0,
+      alto: p ? p.getBoundingClientRect().height : 0,
+      svg: svg ? +svg.getAttribute('width') : 0,
+    };
+  }).filter((g) => g.lienzo > 0);
+  const d = document.documentElement;
+  return { util, graficos, scroll: d.scrollWidth - window.innerWidth };
+}
+"""
+
+
+def _esperar(pag, condicion: str, timeout: int = 8_000) -> None:
+    """`wait_for_function` que, si vence, falla con las medidas en vez de un timeout mudo."""
+    try:
+        pag.wait_for_function(condicion, timeout=timeout)
+    except Exception:  # noqa: BLE001  (el TimeoutError de Playwright; se reporta con datos)
+        pytest.fail(f"la condicion no se cumplio: {pag.evaluate(MEDIR_GRAFICOS)}")
+
+
+def _abrir_en(navegador, url: str, ancho: int, alto: int = 800):
+    movil = ancho < 700
+    pag = navegador.new_page(viewport={"width": ancho, "height": alto}, is_mobile=movil,
+                             has_touch=movil, reduced_motion="reduce")
+    pag.goto(url, wait_until="networkidle")
+    pag.wait_for_selector(".js-plotly-plot svg.main-svg", timeout=20_000)
+    pag.wait_for_timeout(800)
+    return pag
+
+
+@pytest.mark.parametrize("ancho", [360, 412, 768])
+def test_en_movil_y_tablet_los_graficos_ocupan_el_ancho_util(navegador, ui_viva, ancho):
+    """El hallazgo de partida: con `ui.grid(columns=2)` fijo cada grafico tenia 104 px a
+    360 px. Ahora debe ocupar >= 90 % del ancho util (1 columna; en 768, 2)."""
+    pag = _abrir_en(navegador, f"{ui_viva}/tareas", ancho)
+    try:
+        m = pag.evaluate(MEDIR_GRAFICOS)
+        assert m["graficos"], "no se dibujo ningun grafico"
+        assert m["scroll"] <= 1, f"scroll horizontal de {m['scroll']} px a {ancho} px"
+        columnas = 1 if ancho < 768 else 2
+        minimo = 0.9 * (m["util"] - 16 * (columnas - 1)) / columnas
+        estrechos = [g for g in m["graficos"] if g["tarjeta"] < minimo]
+        assert not estrechos, f"a {ancho} px: tarjetas < {minimo:.0f} px: {estrechos}"
+        # El lienzo sigue a la tarjeta y la altura no es una tira alta y flaca.
+        malos = [g for g in m["graficos"]
+                 if g["lienzo"] < 0.85 * g["tarjeta"] or g["alto"] > 2.2 * g["lienzo"]]
+        assert not malos, malos
+    finally:
+        pag.close()
+
+
+def test_en_movil_el_drawer_arranca_cerrado_y_sin_barra_de_plotly(navegador, ui_viva):
+    """`value=True` lo abria como overlay en cada navegacion, tapando la pagina."""
+    pag = _abrir_en(navegador, f"{ui_viva}/tareas", 360)
+    try:
+        abierto = pag.evaluate("""() => {
+            const d = document.querySelector('.q-drawer');
+            return !!d && d.getBoundingClientRect().right > 1; }""")
+        assert not abierto, "el drawer tapa la pagina al cargar en movil"
+        # Y la barra de Plotly no aparece en tactil (vuelve en pantalla completa).
+        visibles = pag.evaluate("""() => [...document.querySelectorAll('.modebar-container')]
+            .filter((m) => getComputedStyle(m).display !== 'none').length""")
+        assert visibles == 0
+    finally:
+        pag.close()
+
+
+def test_el_grafico_sigue_al_contenedor_al_cerrar_el_drawer(navegador, ui_viva):
+    """Hallazgo 5: al cerrar el drawer en escritorio cambia el CONTENEDOR, no la ventana.
+    El ResizeObserver del componente debe reajustar el svg al nuevo ancho."""
+    pag = _abrir_en(navegador, f"{ui_viva}/tareas", 1440, 900)
+    try:
+        antes = pag.evaluate(MEDIR_GRAFICOS)["graficos"]
+        pag.locator(".q-header button").first.click()
+        # Se ESPERA la condicion en vez de dormir un tiempo fijo: la transicion del drawer
+        # y el debounce de `Plotly.Plots.resize` suman un tiempo que varia por maquina.
+        _esperar(pag, f"""() => {{
+            const p = document.querySelector('.aid-graf .js-plotly-plot');
+            const s = p.querySelector('svg.main-svg');
+            const w = p.getBoundingClientRect().width;
+            return w > {antes[0]["lienzo"]} + 50 && Math.abs(+s.getAttribute('width') - w) <= 2; }}""")
+        despues = pag.evaluate(MEDIR_GRAFICOS)["graficos"]
+        desfasados = [g for g in despues if abs(g["svg"] - g["lienzo"]) > 2]
+        assert not desfasados, f"svg sin reajustar al contenedor: {desfasados}"
+    finally:
+        pag.close()
+
+
+def test_el_boton_primario_pasa_aa(navegador, ui_viva):
+    """Blanco sobre el acento daba 1,6:1 en aurora. La tinta oscura viaja en la capa
+    `theme` precisamente para ganarle al `.text-white !important` de Quasar."""
+    pag = _abrir_en(navegador, f"{ui_viva}/tareas", 1280)
+    try:
+        boton = pag.locator(".q-btn.bg-primary").first
+        boton.wait_for(timeout=10_000)
+        fondo = boton.evaluate("el => getComputedStyle(el).backgroundColor")
+        texto = boton.evaluate("el => getComputedStyle(el).color")
+        ratio = _contraste(fondo, texto)
+        assert ratio >= 4.5, f"boton primario {ratio:.1f}:1 ({texto} sobre {fondo})"
+    finally:
+        pag.close()
+
+
+def test_pantalla_completa_ocupa_la_ventana(navegador, ui_viva):
+    """El boton vive en la cabecera de la tarjeta (ya no flota sobre el grafico) y al
+    pulsarlo el lienzo crece hasta casi el alto de la ventana."""
+    pag = _abrir_en(navegador, f"{ui_viva}/tareas", 1280, 800)
+    try:
+        tarjeta = pag.locator(".aid-graf").first
+        lienzo = tarjeta.locator(".js-plotly-plot")
+        alto_antes = lienzo.evaluate("el => el.getBoundingClientRect().height")
+        tarjeta.locator(".aid-fsbtn").click()
+        # El headless tarda ~1 s en entrar en pantalla completa: se espera la condicion.
+        _esperar(pag, """() => {
+            const p = document.querySelector('.aid-graf .js-plotly-plot');
+            return p.getBoundingClientRect().height >= 0.75 * window.innerHeight
+                && Math.abs(+p.querySelector('svg.main-svg').getAttribute('width')
+                            - p.getBoundingClientRect().width) <= 2; }""")
+        alto = lienzo.evaluate("el => el.getBoundingClientRect().height")
+        assert alto > alto_antes and alto >= 0.75 * 800, f"pantalla completa: {alto_antes} -> {alto}"
     finally:
         pag.close()
