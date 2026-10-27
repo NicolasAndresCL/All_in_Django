@@ -9,21 +9,24 @@ cliente externo. Sustituye a la antigua UI Streamlit.
 ```
 nicegui_ui/
 ├── main.py            # @ui.page por vista (7 rutas) + ui.run (puerto 8501)
-├── tema.py            # sistema visual: TEMAS, defaults globales (default_props/classes),
-│                       #   ui.query('body') y el unico add_head_html(shared=True)
-├── layout.py          # shell(): header/drawer, selector de tema y helpers de contenido
-│                       #   (metric_card, tabla con scroll, grafico con fullscreen)
+├── tema.py            # sistema visual: TEMAS (aurora + 16 personajes), defaults globales,
+│                       #   ui.query('body') y el CSS/JS global (add_head_html shared=True)
+├── plotly_tema.py     # plantilla Plotly `aid` + config() de plotly.js (puro, sin UI)
+├── layout.py          # shell(): header/drawer responsivos, selector de tema, rejillas
+│                       #   responsivas y helpers (metric_card, tabla, grafico, sin_datos)
 ├── api_client.py      # cliente HTTP (CRUD, acciones, export, upload, download, paginación)
-├── charts.py          # construir_figuras: las 6 figuras Plotly del dashboard (función pura)
+├── charts.py          # construir_figuras: treemap, esfuerzo, calendario de actividad,
+│                       #   semanal, día de la semana y acumulado (funciones puras)
 │                       #   + figura_tendencia: barras semanales + recta de tareas/analitica/
-├── gantt.py           # Gantt Plotly (personal + equipo)
+├── gantt.py           # Gantt Plotly (personal + equipo) con eje de hora real
 ├── apagado.py         # apagado/reinicio programado del PC local (envuelve shutdown.exe)
 ├── static/fondos/     # personajes con alfa reconstruido (+ mini/ para la banda)
 ├── views/             # una vista por dominio: inicio, calendario, liveops, tareas,
 │                       #   notas, tv, apagado. Tareas incluye la sección Analítica
 │                       #   (tendencia + días atípicos, calculados en la API con
 │                       #   scikit-learn) y el botón "Informe PDF" (seaborn, en la API)
-├── tests/             # nicegui.testing User + responses (páginas), cliente, charts, gantt
+├── tests/             # User + responses (páginas, interacción), cliente, charts, gantt,
+│                       #   tema y test_visual.py (Playwright: CSS y responsividad medidos)
 ├── Dockerfile  run_ui.py  run_app.bat  requirements.txt
 ```
 
@@ -70,14 +73,18 @@ La URL de la API se configura con `API_BASE` (default `http://localhost:8000/api
 
 ## Detalles de UI
 
-- **Tema** (`tema.py`): VS Code *Dark High Contrast* + **16 temas por personaje** con
-  selector en la esquina superior derecha; en **Auto**, cada página trae el suyo. La
-  elección se guarda en `app.storage.user` (por navegador). El personaje va como marca de
-  agua a plena presencia con un aura de `drop-shadow` sobre su silueta; la opacidad se
-  calibra por figura (la calcula `scripts/preparar_fondos.py`).
+- **Tema por defecto: Aurora austral** (2.2.0). Cielo nocturno azul noche con cortinas de
+  aurora verde → violeta → rosa que se mueven despacio y estrellas que titilan (todo CSS
+  procedural), superficies de vidrio, header con un filo de aurora y cifras en degradado.
+  Contraste AA medido en cada color de texto; los botones primarios llevan tinta oscura.
+- **16 temas por personaje** (estilo cubierta) en el selector de la esquina superior
+  derecha; en **Auto**, cada página trae el suyo. La elección se guarda en
+  `app.storage.user` (por navegador). El personaje va como marca de agua con un aura de
+  `drop-shadow` sobre su silueta; la opacidad se calibra por figura
+  (`scripts/preparar_fondos.py`).
 - **El acento tiñe toda la interfaz**: header, drawer, tarjetas (degradado + borde + realce
   y encendido al hover), tablas, separadores, gráficos y menú del selector. Las cifras de
-  las métricas van en `text-primary`.
+  las métricas van en `aid-cifra` (el acento; en aurora, un degradado).
 - **Cubierta de barco** (`tema.CUBIERTA`): madera tenue procedural (gradientes CSS, 0 KB de
   assets) con tablones, juntas y vetas, fija al viewport y teñida con el acento. Va en el
   estilo **inline** de `body`: la utilidad `bg-black` de Quasar es
@@ -91,12 +98,19 @@ La URL de la API se configura con `API_BASE` (default `http://localhost:8000/api
 - **Personalización global antes que estilos elemento por elemento** (guía oficial
   `nicegui/llms.md`): `default_props`/`default_classes` por tipo de elemento en
   `tema.aplicar_defaults()`, `ui.query('body')` para la página, clases Tailwind en las
-  vistas y `add_head_html(..., shared=True)` **solo** para los pseudo-elementos del fondo y
-  los `@keyframes` de las animaciones.
+  vistas (incluida la responsividad) y `add_head_html(..., shared=True)` **solo** para lo
+  inexpresable en Python: pseudo-elementos del fondo, `@keyframes`, `:fullscreen`,
+  `@media (hover: none)` y el estilo interno de Plotly.
+- **Responsiva** (celular, tablet, escritorio): drawer cerrado por debajo de 1024 px,
+  gráficos a 1/2/3 columnas, métricas repartidas según cuántas son, formularios apilados en
+  móvil y sin scroll horizontal de página a ningún ancho (medido con Playwright a 360, 412,
+  768, 1280 y 1920 px).
 - **Tablas** (`layout.tabla`): compactas, cabecera fija y scroll interno (estilo
-  `st.dataframe`), no vuelcan todas las filas a lo largo de la página.
-- **Gráficos** (`layout.grafico`): barra de herramientas Plotly completa + botón de
-  **pantalla completa** (Fullscreen API + resize).
+  `st.dataframe`; en móvil, scroll horizontal dentro de la tabla).
+- **Gráficos** (`layout.grafico(fig, titulo, alto, nombre)`): tarjeta con cabecera (título +
+  **pantalla completa**, con respaldo para iPhone), altura que depende del ancho, plantilla
+  Plotly propia (`plotly_tema.py`) en TODOS los gráficos, barra de herramientas reducida y
+  oculta en táctil. Las figuras viven en `charts.py`/`gantt.py` como funciones puras.
 - **Turnos personales** (`views/calendario.py`): grilla semanal editable de 7 días; "cargar
   desde otra semana" precarga los valores en el formulario (asignando `.value`, sin la
   gimnasia de `session_state` que exigía Streamlit); "Guardar semana" hace upsert por día.

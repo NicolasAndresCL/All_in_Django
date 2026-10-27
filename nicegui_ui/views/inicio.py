@@ -3,7 +3,7 @@
 from nicegui import ui
 
 from nicegui_ui.api_client import APIError, get_client
-from nicegui_ui.layout import banda_tripulacion, banner_error, metric_card, shell
+from nicegui_ui.layout import banda_tripulacion, banner_error, fila_metricas, metric_card, shell
 
 RECURSOS = {
     "Clases": "clases",
@@ -46,12 +46,12 @@ def render() -> None:
             banner_error(_motivo(status, api.tiene_token))
             return
 
-        with ui.row().classes("items-center bg-green-900/30 rounded p-3 w-full"):
-            ui.icon("check_circle").classes("text-green-400")
-            ui.label(f"Conectado a la API en {api.base}")
+        with ui.row().classes("items-center no-wrap bg-green-900/30 rounded-lg p-3 w-full"):
+            ui.icon("check_circle").classes("text-green-400 shrink-0")
+            ui.label(f"Conectado a la API en {api.base}").classes("min-w-0 break-all")
 
         ui.label("Resumen").classes("text-lg font-medium")
-        with ui.row().classes("gap-3 flex-wrap"):
+        with fila_metricas(5):
             for etiqueta, recurso in RECURSOS.items():
                 try:
                     # `contar` = 1 petición por recurso. Con `len(api.list(...))` la

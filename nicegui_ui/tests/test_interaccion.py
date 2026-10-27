@@ -200,9 +200,11 @@ async def test_elegir_un_tema_lo_guarda_para_este_usuario(user: User) -> None:
     async with _api_simulada() as rsps:
         mock_api(rsps)
         await user.open("/")
-        assert t.tema_elegido() == t.TEMA_AUTO  # de fabrica, el personaje de cada pagina
+        # De fabrica (2.2.0): aurora austral, sin nada guardado para este navegador.
+        assert t.tema_elegido() == t.TEMA_POR_DEFECTO == t.TEMA_AURORA
+        assert "tema" not in app.storage.user
 
-        clave = next(iter(t.TEMAS))
+        clave = "brook"  # un personaje: distinto del por defecto, asi el cambio se nota
         # El click va en la columna marcada, no en su etiqueta: quien escucha el evento es
         # el contenedor (ver layout._opcion), asi que pulsar el label no dispara nada.
         user.find(marker=f"tema-{clave}").click()

@@ -9,25 +9,29 @@ from nicegui_ui.charts import construir_figuras, figura_tendencia
 from nicegui_ui.layout import (
     aviso,
     banner_error,
+    fila_metricas,
     grafico,
     metric_card,
     notificar_error,
     notificar_ok,
+    rejilla_graficos,
     shell,
+    sin_datos,
     tabla,
 )
-from nicegui_ui.tema import PLOTLY_TEMPLATE
 
 NUEVO_P, NUEVA_T = "➕ Nuevo proyecto…", "➕ Nueva tarea…"
 TODOS = "(todos)"
 
+# (clave de construir_figuras, título, alto). El calendario es una rejilla de 7 filas:
+# con menos alto sus celdas quedan cuadradas en vez de tiras.
 FIGURAS = [
-    ("jerarquia", "Jerarquía Proyecto / Tarea"),
-    ("esfuerzo", "Esfuerzo por Proyecto"),
-    ("intensidad", "Intensidad Diaria"),
-    ("semanal", "Productividad Semanal"),
-    ("dia_semana", "Actividad por Día de la Semana"),
-    ("acumulado", "Progreso Acumulado"),
+    ("jerarquia", "Distribución por proyecto y tarea", "l"),
+    ("esfuerzo", "Esfuerzo por proyecto", "m"),
+    ("intensidad", "Calendario de actividad (últimas 26 semanas)", "s"),
+    ("semanal", "Productividad semanal", "m"),
+    ("dia_semana", "Actividad por día de la semana", "m"),
+    ("acumulado", "Progreso acumulado", "m"),
 ]
 
 FLECHA = {"sube": "▲ sube", "baja": "▼ baja", "estable": "▬ estable"}
@@ -66,7 +70,7 @@ def render() -> None:
                 aviso("Aún no hay tareas registradas: agrega una para ver el dashboard.")
                 return
 
-            with ui.row().classes("gap-3 flex-wrap"):
+            with fila_metricas(6):
                 metric_card("Tareas Totales", resumen["tareas"])
                 metric_card("Proyectos Activos", resumen["proyectos"])
                 metric_card("Horas Acumuladas", f"{resumen['horas_total']:.1f} h")
@@ -76,22 +80,22 @@ def render() -> None:
                 metric_card("Promedio Diario", f"{resumen['promedio_diario']:.1f} h")
                 metric_card("Promedio Semanal", f"{resumen['promedio_semanal']:.1f} h")
 
-            figs = construir_figuras(resumen, PLOTLY_TEMPLATE)
-            with ui.grid(columns=2).classes("w-full gap-4"):
-                for clave, titulo in FIGURAS:
-                    with ui.card().classes("p-3 w-full"):
-                        ui.label(titulo).classes("font-medium")
-                        if figs[clave] is not None:
-                            grafico(figs[clave])
-                        else:
-                            ui.label("Sin datos suficientes.").classes("text-xs text-gray-500")
+            figs = construir_figuras(resumen)
+            # 1 columna en móvil, 2 en tablet, 3 en pantallas anchas. Antes era
+            # `ui.grid(columns=2)` fijo: 104 px por gráfico a 360 px de ancho.
+            with rejilla_graficos():
+                for clave, titulo, alto in FIGURAS:
+                    if figs[clave] is not None:
+                        grafico(figs[clave], titulo, alto=alto, nombre=f"tareas_{clave}")
+                    else:
+                        sin_datos(titulo)
 
         # ----------------------------------------------- analítica (sklearn)
         @ui.refreshable
         def analitica() -> None:
             # El modelo vive en la API (`tareas/analitica/`); aquí solo se dibuja. La UI no
             # importa scikit-learn: su imagen no carga los ~400 MB que sumaron a la de la API.
-            with ui.row().classes("items-center gap-3"):
+            with ui.row().classes("items-center gap-3 flex-wrap"):
                 ui.label("Analítica").classes("text-lg font-medium")
                 ui.button("Informe PDF", icon="picture_as_pdf", on_click=descargar_informe).props("flat")
             try:
@@ -105,14 +109,13 @@ def render() -> None:
                 aviso(f"Se necesitan al menos {req['min_semanas']} semanas de registros "
                       "para estimar una tendencia.")
             else:
-                with ui.row().classes("gap-3 flex-wrap"):
+                with fila_metricas(3):
                     metric_card("Tendencia", f"{tend['pendiente']:+.2f} h/sem",
                                 extra=FLECHA[tend["direccion"]])
                     metric_card("Próxima semana (proyección)", f"{tend['proyeccion']:.1f} h")
                     metric_card("Ajuste R²", f"{tend['r2']:.2f}")
-                with ui.card().classes("p-3 w-full"):
-                    ui.label("Horas semanales y tendencia lineal").classes("font-medium")
-                    grafico(figura_tendencia(tend, PLOTLY_TEMPLATE))
+                grafico(figura_tendencia(tend), "Horas semanales y tendencia lineal",
+                        alto="m", nombre="tareas_tendencia")
 
             ui.label("Días atípicos (IsolationForest)").classes("font-medium")
             if datos["atipicos"]:
@@ -144,7 +147,7 @@ def render() -> None:
 
             ui.select([TODOS] + proyectos(), value=estado["filtro"],
                       label="Filtrar por proyecto", on_change=cambia_filtro) \
-                .classes("w-64")
+                .classes("w-full sm:w-64")
             registros = _filtrados(estado)
             if registros:
                 # Marcador: la página tiene DOS ui.table (atípicos y registros); los tests

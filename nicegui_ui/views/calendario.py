@@ -14,6 +14,7 @@ from nicegui_ui.gantt import generar_gantt
 from nicegui_ui.layout import (
     aviso,
     banner_error,
+    fila_metricas,
     grafico,
     metric_card,
     notificar_error,
@@ -21,6 +22,10 @@ from nicegui_ui.layout import (
     shell,
     tabla,
 )
+
+# Panel de pestaña sin el padding lateral de Quasar en móvil (16 px que se sumaban al
+# del shell); desde 640 px vuelve.
+PANEL = "px-0 sm:px-4"
 
 DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
@@ -41,16 +46,18 @@ def render() -> None:
         api = get_client()
         refrescos: dict[str, callable] = {}  # registro cruzado entre pestañas
 
-        with ui.tabs().classes("w-full") as tabs:
+        # `mobile-arrows`: a 360 px las tres pestañas no caben y Quasar las desplaza;
+        # las flechas dicen que hay más a la derecha.
+        with ui.tabs().props("mobile-arrows outside-arrows").classes("w-full") as tabs:
             t_clases = ui.tab("Clases")
             t_turnos = ui.tab("Turnos personales")
             t_impr = ui.tab("Impresión y Gantt")
         with ui.tab_panels(tabs, value=t_clases).classes("w-full"):
-            with ui.tab_panel(t_clases):
+            with ui.tab_panel(t_clases).classes(PANEL):
                 _tab_clases(api, refrescos)
-            with ui.tab_panel(t_turnos):
+            with ui.tab_panel(t_turnos).classes(PANEL):
                 _tab_turnos(api, refrescos)
-            with ui.tab_panel(t_impr):
+            with ui.tab_panel(t_impr).classes(PANEL):
                 _tab_impresion(api, refrescos)
 
 
@@ -210,9 +217,11 @@ def _tab_turnos(api, refrescos: dict) -> None:
     # -- grilla de 7 días --------------------------------------------------------
     ui.label("Configura la semana — marca Libre o define entrada/salida por día:") \
         .classes("font-medium")
-    with ui.grid(columns=7).classes("w-full gap-2"):
+    # 7 columnas solo desde 1024 px: con `columns=7` fijo, a 360 px cada día tenía ~40 px
+    # para dos campos de hora. 2 por fila en móvil, 4 en tablet.
+    with ui.grid().classes("w-full gap-2 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7"):
         for d in DIAS:
-            with ui.column().classes("items-stretch gap-1"):
+            with ui.column().classes("items-stretch gap-1 min-w-0"):
                 ui.label(d[:3]).classes("font-bold text-center")
                 # .mark() para que los tests puedan distinguir los 7 checkboxes, que
                 # comparten etiqueta ("Libre") y no tienen otro rasgo por el que filtrar.
@@ -254,7 +263,7 @@ def _tab_turnos(api, refrescos: dict) -> None:
             return
         filas = list(por_dia.values())
         tabla(filas)
-        with ui.row().classes("gap-3"):
+        with fila_metricas(2):
             metric_card("Horas netas", round(sum(t.get("neto", 0) for t in filas), 2))
             metric_card("Horas extra", round(sum(t.get("extra", 0) for t in filas), 2))
 
@@ -297,12 +306,13 @@ def _tab_impresion(api, refrescos: dict) -> None:
 
         h_est = round(sum(c.get("horas", 0) for c in cls_sem), 1)
         h_lab = round(sum(t.get("neto", 0) for t in tur_sem), 1)
-        with ui.row().classes("gap-3"):
+        with fila_metricas(3):
             metric_card("Carga académica", f"{h_est} h")
             metric_card("Carga laboral (neto)", f"{h_lab} h")
             metric_card("Ocupación total", f"{round(h_est + h_lab, 1)} h")
 
-        grafico(generar_gantt(cls_sem, tur_sem, sem))
+        grafico(generar_gantt(cls_sem, tur_sem, sem), f"Gantt semanal · {sem}", alto="l",
+                nombre=f"gantt_{sem}")
 
         ui.label("Descargar PDF").classes("font-medium")
 
@@ -313,7 +323,7 @@ def _tab_impresion(api, refrescos: dict) -> None:
             except APIError as exc:
                 notificar_error(f"Error al generar el PDF: {exc}")
 
-        with ui.row().classes("gap-2"):
+        with ui.row().classes("gap-2 flex-wrap"):
             ui.button("📄 Estudio",
                       on_click=lambda: pdf("clases/imprimir/", f"Estudio_{sem}.pdf")) \
                 .props("outline")

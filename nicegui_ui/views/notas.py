@@ -27,9 +27,12 @@ def render() -> None:
                 estado["sel"] = None
             nota = next((n for n in notas if n["id"] == estado["sel"]), None)
 
-            with ui.row().classes("w-full gap-6 items-start no-wrap"):
+            # Lista + editor lado a lado desde tablet; en móvil la lista va ARRIBA y el
+            # editor debajo a todo el ancho (antes una fila `no-wrap` con la lista fija a
+            # 256 px dejaba ~60 px al editor a 360 px).
+            with ui.element("div").classes("w-full flex flex-col md:flex-row gap-6 items-start"):
                 # -- lista / selección ------------------------------------
-                with ui.column().classes("w-64 shrink-0"):
+                with ui.column().classes("w-full md:w-64 md:shrink-0"):
                     ui.label("Tus notas").classes("text-lg font-medium")
 
                     def cambiar(e) -> None:
@@ -39,7 +42,7 @@ def render() -> None:
                     ui.radio(opciones, value=estado["sel"], on_change=cambiar)
 
                 # -- editor -----------------------------------------------
-                with ui.column().classes("grow"):
+                with ui.column().classes("w-full grow min-w-0"):
                     ui.label("Editar" if nota else "Crear nota").classes("text-lg font-medium")
                     titulo = ui.input("Título", value=(nota or {}).get("titulo", "")) \
                         .classes("w-full")
@@ -81,7 +84,7 @@ def render() -> None:
                                 ui.button("Eliminar", color="negative", on_click=confirmar)
                         dlg.open()
 
-                    with ui.row().classes("items-center gap-2"):
+                    with ui.row().classes("items-center gap-2 flex-wrap"):
                         ui.button("💾 Guardar", on_click=guardar).props("color=primary")
                         if nota:
                             ui.button("🗑️ Eliminar", on_click=eliminar).props("flat color=negative")
