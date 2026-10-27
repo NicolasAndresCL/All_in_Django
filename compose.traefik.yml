@@ -29,7 +29,7 @@
 # contestaria 301 a https://api:8000, donde gunicorn no habla TLS: la UI quedaria sin API.
 #
 # Variables extra del .env (ademas de las de .env.docker.example):
-#   IMAGE_TAG                  semver publicado en GHCR, sin `v` (p. ej. 2.2.0)
+#   IMAGE_TAG                  semver publicado en GHCR, sin `v` (p. ej. 2.3.0)
 #   ALL_IN_DJANGO_HOST         nombre publico, p. ej. allindjango.<ip-con-guiones>.sslip.io
 #   TRAEFIK_NETWORK            red de Docker donde vive Traefik (`docker network ls`)
 #   ALL_IN_DJANGO_BASIC_AUTH   usuario:hash ($apr1$ o bcrypt) ENTRE COMILLAS SIMPLES en el .env,

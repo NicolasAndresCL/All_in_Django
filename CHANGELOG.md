@@ -7,6 +7,23 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 
 ## [Sin publicar]
 
+## [2.3.0] — 2026-10-27
+
+Nueva forma de desplegar: n8n puede hablar con la API por una red interna, sin publicarla. La imagen no
+cambia de comportamiento (solo su número de versión): es un cambio de despliegue.
+
+### Añadido
+
+- **`compose.n8n.yml`**: override que va encima de `docker-compose.deploy.yml` + `compose.traefik.yml` y
+  mete **solo la API** en la red Docker interna `n8n-allindjango` (external, `--internal`), con el alias
+  estable `all-in-django-api` y ese nombre sumado al `ALLOWED_HOSTS` por defecto. Es la puerta de los
+  workflows «All in Django - \*» del repo [`integracion_n8n`](https://github.com/NicolasAndresCL/integracion_n8n)
+  (registro por webhook, semana nueva, resumen semanal, vigilancia y aviso de errores). Postgres y la UI
+  quedan fuera de esa red.
+- CI (`compose-traefik`) y `verificar.ps1`: segunda comprobación con los tres compose apilados, como el
+  `COMPOSE_FILE` del VPS. `scripts/comprobar_override_traefik.py --con-n8n` exige que solo la API esté en
+  la red de n8n, con su alias, en `ALLOWED_HOSTS` y fuera de la red de Traefik.
+
 ### Documentación
 
 - `nicegui_ui/README.md`: regla de las etiquetas del eje X (máximo 6 rótulos de semana en corto, ejes de

@@ -1,13 +1,13 @@
 # 🧩 All in Django — API Django/DRF + UI NiceGUI con IaC de punta a punta
 
 [![CI](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml/badge.svg)](https://github.com/NicolasAndresCL/All_in_Django/actions/workflows/ci.yml)
-![Versión](https://img.shields.io/badge/versi%C3%B3n-2.2.0-blue)
+![Versión](https://img.shields.io/badge/versi%C3%B3n-2.3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.14-3776AB)
 
 | | |
 |---|---|
-| **Versión** | 2.2.0 |
-| **Fecha** | 26 de octubre de 2026 |
+| **Versión** | 2.3.0 |
+| **Fecha** | 27 de octubre de 2026 |
 | **Autor** | [Nicolás Andrés Cano Leal](#autor) |
 
 Versión **Django + Django REST Framework** del proyecto `all_in_one` (que era 100% Streamlit).
@@ -54,6 +54,7 @@ all_in_django/
 ├── Dockerfile  docker/entrypoint.sh  docker-compose.yml  .dockerignore  .env.docker.example
 ├── docker-compose.deploy.yml # CD: imágenes de GHCR, sin build
 ├── compose.traefik.yml      # override del VPS: detrás de un Traefik existente, 0 puertos publicados
+├── compose.n8n.yml          # override del VPS: solo la API en una red interna con el worker de n8n
 ├── .github/workflows/       # ci.yml (tests+build) · docker-publish.yml (GHCR)
 ├── infra/terraform/         # AWS EC2 + RDS (skeleton)
 ├── infra/helm/all-in-django/ # chart de Kubernetes
@@ -97,7 +98,7 @@ Toda la infraestructura está declarada como código. La orquestación imperativ
 | Publicación | `.github/workflows/docker-publish.yml` | push a GHCR en tags `v*` (semver **sin la `v`** + sha, **no** `latest`) |
 | Releases | `.github/workflows/release.yml` + `CHANGELOG.md` | GitHub Release por tag, con las notas de su sección del CHANGELOG |
 | **CD** | `Jenkinsfile` + `docker-compose.deploy.yml` | deploy de GHCR por compose, con respaldo previo y **rollback** |
-| **VPS** | `compose.traefik.yml` + `docker-compose.deploy.yml` | despliegue detrás de un Traefik existente: 0 puertos publicados, basic auth, `mem_limit` ([detalle](#detrás-de-un-traefik-existente-vps)) |
+| **VPS** | `compose.traefik.yml` + `docker-compose.deploy.yml` (+ `compose.n8n.yml`) | despliegue detrás de un Traefik existente: 0 puertos publicados, basic auth, `mem_limit`; opcionalmente la API en una red interna con n8n ([detalle](#detrás-de-un-traefik-existente-vps)) |
 | Nube | `infra/terraform/` (AWS EC2 + RDS Postgres 18) | infra en la nube (skeleton) |
 | Kubernetes | `infra/helm/all-in-django/` | chart (API/UI/Postgres 18/Ingress) |
 
@@ -238,8 +239,8 @@ Lo que el pipeline hace por ti, y antes no:
 
 ```bash
 # Equivalente manual (lo que ejecuta el Jenkinsfile):
-IMAGE_TAG=2.2.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-IMAGE_TAG=2.2.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+IMAGE_TAG=2.3.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+IMAGE_TAG=2.3.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 ```
 
 > Ya no se pasa `-p`: el nombre de proyecto (`all_in_django`) está fijado con `name:` dentro de
@@ -277,11 +278,11 @@ ensaya nunca.
 
 ```bash
 docker run -d --name registry-local -p 5000:5000 --restart unless-stopped registry:2
-docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.2.0
-docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.2.0
-docker push localhost:5000/nicolasandrescl/all-in-django-api:2.2.0
-docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.2.0
-# y lanzar el job con IMAGE_TAG=2.2.0  REGISTRY=localhost:5000
+docker tag all_in_django-api:latest localhost:5000/nicolasandrescl/all-in-django-api:2.3.0
+docker tag all_in_django-ui:latest  localhost:5000/nicolasandrescl/all-in-django-ui:2.3.0
+docker push localhost:5000/nicolasandrescl/all-in-django-api:2.3.0
+docker push localhost:5000/nicolasandrescl/all-in-django-ui:2.3.0
+# y lanzar el job con IMAGE_TAG=2.3.0  REGISTRY=localhost:5000
 ```
 
 Así se validó el pipeline de verdad, y así se destaparon dos fallos que **no se ven
@@ -316,7 +317,8 @@ Variables del `.env` además de las de `.env.docker.example` (en **negrita** las
 | Variable | Para qué |
 |---|---|
 | `COMPOSE_PATH_SEPARATOR=:` y `COMPOSE_FILE=docker-compose.deploy.yml:compose.traefik.yml` | Un `docker compose up` a secas aplica siempre el override, nunca el compose base con puertos |
-| **`IMAGE_TAG`** | Semver publicado en GHCR, sin `v` (p. ej. `2.2.0`) |
+| `N8N_NETWORK` | Solo con `compose.n8n.yml`: red interna compartida con n8n (por defecto `n8n-allindjango`; ver abajo) |
+| **`IMAGE_TAG`** | Semver publicado en GHCR, sin `v` (p. ej. `2.3.0`) |
 | **`ALL_IN_DJANGO_HOST`**, **`TRAEFIK_NETWORK`** | Nombre público y red de Docker donde vive el Traefik (`docker network ls`) |
 | **`ALL_IN_DJANGO_BASIC_AUTH`** | `usuario:hash` (`openssl passwd -apr1`) **entre comillas simples**, para que Compose no interprete los `$` del hash |
 | **`UI_STORAGE_SECRET`** | Firma la cookie de sesión de NiceGUI (`openssl rand -hex 24`) |
@@ -327,7 +329,7 @@ Variables del `.env` además de las de `.env.docker.example` (en **negrita** las
 arma con `POSTGRES_*`.
 
 ```bash
-git clone --branch v2.2.0 https://github.com/NicolasAndresCL/All_in_Django.git /opt/all_in_django
+git clone --branch v2.3.0 https://github.com/NicolasAndresCL/All_in_Django.git /opt/all_in_django
 cd /opt/all_in_django
 docker volume create all_in_django_pgdata          # UNA vez: el volumen es external
 # crear el .env (modo 600) con las variables de arriba; API_TOKEN provisional hasta el paso 2
@@ -349,6 +351,39 @@ vieja tras una migración nueva puede fallar. **`docker compose down` conserva l
 > 301 a `https://api:8000`, donde gunicorn no habla TLS: la UI se queda sin API **con los healthchecks en
 > verde**. Solo tendría sentido activarlo si la API se expusiera por su cuenta detrás de TLS y la UI
 > dejara de llamarla por HTTP interno.
+
+#### Automatización con n8n (red interna, desde la 2.3.0)
+
+Los workflows **«All in Django - \*»** del repo [`integracion_n8n`](https://github.com/NicolasAndresCL/integracion_n8n) (`n8n/workflows/`) automatizan los registros
+que antes se hacían a mano: tareas, notas, turnos y clases por **webhook con secreto**, la **semana nueva**
+copiada cada domingo, un **resumen semanal** por correo con el informe PDF, la **vigilancia** de la API y
+un aviso por correo cuando algo falla. Hablan con la API por HTTP y con token: no tocan la base.
+
+`compose.n8n.yml` se aplica **encima** de los otros dos y mete **solo la API** en una red Docker
+**interna** compartida con el worker de n8n:
+
+| Qué hace | Por qué |
+|---|---|
+| La API entra a la red `n8n-allindjango` con el alias **`all-in-django-api`** | Es el host que usan los workflows; no depende de `container_name` ni del nombre del proyecto |
+| La red es `external` e `--internal` | Se crea una vez en el servidor; sin salida a internet por sí misma |
+| Postgres y la UI **no** entran | El worker de n8n no puede hablarle a la base saltándose la API |
+| `ALLOWED_HOSTS` por defecto suma `all-in-django-api` | Sin él, Django responde **400 DisallowedHost** a cada petición de n8n |
+
+Descartado: publicar `/api` por Traefik (dejaría `/api/` y `/admin/` en internet) y meter n8n en
+`all_in_django-net` (vería también Postgres).
+
+```bash
+docker network create --internal n8n-allindjango   # UNA vez (la red es external)
+# en el .env: COMPOSE_FILE=docker-compose.deploy.yml:compose.traefik.yml:compose.n8n.yml
+docker compose up -d --wait api                    # recrea solo la API con la red nueva
+docker compose exec -T api python manage.py shell -c "from django.contrib.auth import get_user_model; get_user_model().objects.get_or_create(username='n8n')"
+docker compose exec -T api python manage.py drf_create_token n8n   # token PROPIO de n8n, no el de la UI
+```
+
+El token es de un usuario aparte (`n8n`) para poder revocarlo sin dejar a la UI sin API. Si tu `.env`
+define `ALLOWED_HOSTS`, agrégale `all-in-django-api`. En n8n, además, el worker se suma a la misma red
+(lo detalla el runbook §15 de `vps-infra`, junto con las credenciales; la prueba de punta a punta que corre
+los cinco workflows contra esta imagen en Docker está en `integracion_n8n`).
 
 ### Terraform (AWS) y Helm (Kubernetes)
 
@@ -903,7 +938,7 @@ algo que un lint de segundos ya iba a rechazar:
 | `test` | pytest en SQLite con **`--cov-fail-under=80`** (la cobertura es condición de fallo, no un número decorativo) y validación del **esquema OpenAPI** con `--fail-on-warn` |
 | `test-postgres` | la misma suite contra **Postgres 18 real** (servicio de Actions), con `-rs` para que los saltados sean visibles |
 | `deploy-check` | `manage.py check --deploy --fail-level WARNING` con `DEBUG=False` + `SECURE_HTTPS=True` y una `SECRET_KEY` efímera |
-| `compose-traefik` | `compose.traefik.yml` sobre `docker-compose.deploy.yml` con `docker compose config` (no levanta nada): resuelve sin `.env.docker`, **0 puertos publicados**, solo la UI en la red de Traefik, todos con `mem_limit` y `SECURE_HTTPS=False` por defecto (`scripts/comprobar_override_traefik.py`, el mismo que usa `verificar.ps1`) |
+| `compose-traefik` | `compose.traefik.yml` sobre `docker-compose.deploy.yml` con `docker compose config` (no levanta nada): resuelve sin `.env.docker`, **0 puertos publicados**, solo la UI en la red de Traefik, todos con `mem_limit` y `SECURE_HTTPS=False` por defecto; y con `compose.n8n.yml` encima, **solo la API** en la red de n8n, con su alias y en `ALLOWED_HOSTS` (`scripts/comprobar_override_traefik.py [--con-n8n]`, el mismo que usa `verificar.ps1`) |
 | `terraform` | `fmt -check`, `init -backend=false`, `validate` y **`terraform test`** con proveedores simulados: RDS privado, token de la UI en el cloud-init, `image_tag` ≠ `latest`. Sin credenciales AWS ni recursos de pago |
 | `build` | construye ambas imágenes, **levanta el stack** esperando a que los tres servicios queden `healthy` y le **pasa la colección Postman con Newman** |
 
@@ -985,4 +1020,4 @@ Backend Engineer → SRE | Python · Django · Kubernetes · Terraform · CI/CD
 - Portafolio: [nicolasandrescl.github.io](https://nicolasandrescl.github.io/)
 - Correo: [nicolas.cano.leal@gmail.com](mailto:nicolas.cano.leal@gmail.com)
 
-All in Django v2.2.0 · 26 de octubre de 2026
+All in Django v2.3.0 · 27 de octubre de 2026
