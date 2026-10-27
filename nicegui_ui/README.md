@@ -111,6 +111,10 @@ La URL de la API se configura con `API_BASE` (default `http://localhost:8000/api
   **pantalla completa**, con respaldo para iPhone), altura que depende del ancho, plantilla
   Plotly propia (`plotly_tema.py`) en TODOS los gráficos, barra de herramientas reducida y
   oculta en táctil. Las figuras viven en `charts.py`/`gantt.py` como funciones puras.
+  Etiquetas del eje X sin solapes a ningún ancho: en un eje de categorías Plotly no oculta las
+  que chocan, así que `etiquetas_semana()` rotula como máximo 6 semanas en corto («S27»,
+  siempre la última) y los ejes de fecha usan `plotly_tema.FECHAS_COMPACTAS` (una línea por
+  nivel de zoom). `test_visual.py` mide la caja real de cada etiqueta a 360 y 412 px.
 - **Turnos personales** (`views/calendario.py`): grilla semanal editable de 7 días; "cargar
   desde otra semana" precarga los valores en el formulario (asignando `.value`, sin la
   gimnasia de `session_state` que exigía Streamlit); "Guardar semana" hace upsert por día.

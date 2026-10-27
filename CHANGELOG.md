@@ -7,6 +7,11 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 
 ## [Sin publicar]
 
+### Documentación
+
+- `nicegui_ui/README.md`: regla de las etiquetas del eje X (máximo 6 rótulos de semana en corto, ejes de
+  fecha en una línea) y el test visual que la vigila.
+
 ## [2.2.0] — 2026-10-26
 
 La UI se rehace para el celular y la tablet, con un tema nuevo por defecto y gráficos reescritos. La API
