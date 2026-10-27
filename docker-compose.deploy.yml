@@ -2,8 +2,8 @@
 # Lo usa el Jenkinsfile para desplegar en el mismo daemon Docker donde corre Jenkins.
 # Para desarrollo/build local usa docker-compose.yml (con `build:`).
 #
-#   IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
-#   IMAGE_TAG=2.1.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
+#   IMAGE_TAG=2.2.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml pull
+#   IMAGE_TAG=2.2.0 docker compose --env-file .env.docker -f docker-compose.deploy.yml up -d
 #
 # Variables de imagen (Jenkins las inyecta; defaults abajo):
 #   REGISTRY=ghcr.io  IMAGE_OWNER=nicolasandrescl  IMAGE_TAG=<semver publicado>

@@ -7,6 +7,55 @@ de GHCR se publican **sin** la `v`: el tag `v2.0.0` produce `all-in-django-api:2
 
 ## [Sin publicar]
 
+## [2.2.0] — 2026-10-26
+
+La UI se rehace para el celular y la tablet, con un tema nuevo por defecto y gráficos reescritos. La API
+no cambia: es un cambio solo de la imagen `all-in-django-ui`.
+
+### Añadido
+
+- **Tema «Aurora austral»** (por defecto): cielo nocturno con cortinas de aurora animadas y estrellas
+  (CSS procedural, 0 KB de assets), superficies de vidrio esmerilado, cromo con un filo verde → violeta →
+  rosa y cifras en degradado. Contraste AA medido en cada color de texto (11,8:1 el acento). Los 16 temas
+  por personaje y el modo Auto siguen en el selector; la elección guardada de cada navegador se respeta.
+- **Plantilla Plotly propia** (`nicegui_ui/plotly_tema.py`, plantilla `aid`) aplicada a TODOS los
+  gráficos, Gantt incluidos: tinta y rejilla del tema, leyenda horizontal, márgenes automáticos y la
+  paleta categórica de la skill `dataviz` validada para fondo oscuro.
+- **Calendario de actividad** (heatmap semana × día, últimas 26 semanas) en vez del área diaria, y
+  **treemap** con las colas plegadas en «Otras»/«Otros proyectos» en vez del sunburst.
+- Pantalla completa con respaldo para iPhone (capa fija cuando Safari no ofrece la Fullscreen API).
+- Tests: figuras sin altura fija y con la plantilla, plegado de colas, calendario, colores por entidad,
+  CSS responsivo del tema y, en el navegador (`pytest -m visual`), ancho de los gráficos a 360/412/768 px,
+  drawer cerrado en móvil, reajuste al cerrar el drawer, contraste del botón primario y pantalla completa.
+
+### Cambiado
+
+- **Rejillas responsivas**: gráficos a 1 columna en móvil, 2 en tablet y 3 en pantallas anchas (antes 2
+  fijas: 104 px por gráfico a 360 px); métricas con `auto-fit`; grilla semanal de turnos a 2/4/7
+  columnas; canales de TV a 2–6; formularios de LiveOps y Notas apilados en móvil (fuera los `no-wrap`).
+- **Alturas que dependen del ancho** (`aid-alto-s/m/l/xl`, `clamp()` sobre `vw`): las figuras ya no fijan
+  `height` en píxeles.
+- **Drawer responsivo** (`show-if-above`): cerrado por debajo de 1024 px, abierto en escritorio. Antes
+  se abría como overlay sobre la página en cada navegación en móvil y tablet.
+- Barra de Plotly reducida a descargar/zoom/pan/reset, visible solo al pasar el ratón, oculta en táctil
+  y a menos de 640 px (vuelve en pantalla completa). El botón de pantalla completa pasa a la cabecera de
+  la tarjeta: ya no se superpone con el título ni con la barra.
+- **Gantt** con eje de hora real (ticks adaptativos en vez de 20 fijos), días abreviados, una traza por
+  categoría y textos que se ocultan si no caben; el de LiveOps con leyenda horizontal (la vertical se
+  comía un tercio del ancho).
+- «Esfuerzo por proyecto» y «Actividad por día»: una serie, un color, sin colorbar redundante; nombres
+  largos truncados en el eje con el nombre completo en el tooltip; la cola de proyectos en «Otros».
+- Contenido hasta 1600 px de ancho (antes 1152).
+
+### Corregido
+
+- Texto de los botones primarios: blanco sobre el acento daba 1,3–3,4:1 en todos los temas (suspende
+  AA); ahora tinta oscura, 5,6–14:1. Declarado en la capa CSS `theme` para ganarle al `!important` de
+  Quasar.
+- Los Gantt no usaban plantilla: ejes y título en el azul marino de Plotly (`#2a3f5f`) sobre negro.
+- Se elimina el listener de `fullscreenchange` que llamaba a `window.Plotly`, que no existe (NiceGUI carga
+  Plotly como módulo ES): el reajuste lo hace el `ResizeObserver` del componente.
+
 ## [2.1.0] — 2026-10-26
 
 Despliegue en un servidor que ya tiene un Traefik (el VPS compartido con n8n). La aplicación no cambia,

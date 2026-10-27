@@ -3,4 +3,4 @@ name: all-in-django
 description: All in Django — API (Django/DRF) + UI (NiceGUI) + Postgres
 type: application
 version: 0.2.0
-appVersion: "2.1.0"
+appVersion: "2.2.0"
