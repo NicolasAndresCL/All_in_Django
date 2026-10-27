@@ -33,7 +33,9 @@ RESUMEN = {
     "por_proyecto": [{"proyecto": "ProyectoA", "horas": 2.0}],
     "por_tarea": [{"proyecto": "ProyectoA", "tarea": "tareaX", "horas": 2.0}],
     "por_dia": [{"fecha": "2026-07-01", "horas": 2.0}],
-    "por_semana": [{"semana": "Sem 27", "horas": 2.0}],
+    # 40 semanas, como la base real: con una sola, ningún test podía ver que las
+    # etiquetas del eje de "Productividad semanal" se montaban a 360 px.
+    "por_semana": [{"semana": f"Sem {n}", "horas": 2.0} for n in range(3, 43)],
     "por_dia_semana": [{"dia": d, "horas": 0.0} for d in
                        ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes",
                         "Sábado", "Domingo"]],

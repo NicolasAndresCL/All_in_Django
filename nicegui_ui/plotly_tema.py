@@ -43,6 +43,19 @@ FUENTE = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 
 PLANTILLA = "aid"
 
+# Ejes de FECHA en UNA sola línea según el zoom. El formato automático de Plotly añade
+# una segunda línea con la fecha completa ("Jul 1, 2026") bajo los ticks de hora o día,
+# y a 360 px esa línea chocaba con la del tick vecino. El detalle sigue en el tooltip.
+# Va en cada eje de fecha y no en la plantilla: `tickformatstops` también rige en los
+# ejes numéricos, donde estos `dtickrange` no significan nada.
+_DIA_MS = 86_400_000
+FECHAS_COMPACTAS = [
+    dict(dtickrange=[None, _DIA_MS], value="%H:%M"),
+    dict(dtickrange=[_DIA_MS, "M1"], value="%d %b"),
+    dict(dtickrange=["M1", "M12"], value="%b %Y"),
+    dict(dtickrange=["M12", None], value="%Y"),
+]
+
 
 def _registrar() -> None:
     """Registra la plantilla `aid` sobre `plotly_dark` (se hereda lo que no se toca)."""

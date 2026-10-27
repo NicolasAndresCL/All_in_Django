@@ -338,6 +338,29 @@ def test_en_movil_y_tablet_los_graficos_ocupan_el_ancho_util(navegador, ui_viva,
         pag.close()
 
 
+SOLAPES_EJE_X = """
+() => [...document.querySelectorAll('.js-plotly-plot')].flatMap((p) => {
+  const cajas = [...p.querySelectorAll('.xtick text')]
+    .map((t) => t.getBoundingClientRect()).filter((r) => r.width > 0)
+    .sort((a, b) => a.left - b.left);
+  return cajas.slice(1).flatMap((r, i) => r.left < cajas[i].right - 1
+    ? [{grafico: p.closest('.q-card')?.innerText.split('\\n')[0], izq: cajas[i].right, der: r.left}] : []);
+})
+"""
+
+
+@pytest.mark.parametrize("ancho", [360, 412])
+def test_en_movil_las_etiquetas_del_eje_x_no_se_pisan(navegador, ui_viva, ancho):
+    """En un eje de CATEGORÍAS Plotly no oculta las etiquetas que chocan: con 40 semanas
+    "Sem N" se montaban a 360 px. Se mide la caja real de cada etiqueta."""
+    pag = _abrir_en(navegador, f"{ui_viva}/tareas", ancho)
+    try:
+        solapes = pag.evaluate(SOLAPES_EJE_X)
+        assert not solapes, f"a {ancho} px se pisan etiquetas del eje X: {solapes}"
+    finally:
+        pag.close()
+
+
 def test_en_movil_el_drawer_arranca_cerrado_y_sin_barra_de_plotly(navegador, ui_viva):
     """`value=True` lo abria como overlay en cada navegacion, tapando la pagina."""
     pag = _abrir_en(navegador, f"{ui_viva}/tareas", 360)

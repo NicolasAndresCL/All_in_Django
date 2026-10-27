@@ -29,6 +29,7 @@ import plotly.graph_objects as go
 
 from nicegui_ui.plotly_tema import (
     COLOR_OTROS,
+    FECHAS_COMPACTAS,
     MAX_CATEGORIAS,
     PALETA,
     PLANTILLA,
@@ -43,6 +44,7 @@ TOP_PROYECTOS = MAX_CATEGORIAS        # 7 con color propio + "Otros proyectos"
 TOP_TAREAS = 5                        # por proyecto, el resto en "Otras (n)"
 TOP_BARRAS = 10                       # filas de "Esfuerzo por proyecto"
 SEMANAS_CALENDARIO = 26               # medio año: legible a 360 px
+MAX_ETIQUETAS_SEMANA = 6              # "S27" ≈ 28 px: 6 caben en ~270 px útiles a 360 px
 
 OTROS_PROYECTOS = "Otros proyectos"
 
@@ -173,14 +175,30 @@ def figura_calendario(por_dia: list[dict]) -> go.Figure | None:
     return fig
 
 
+def etiquetas_semana(semanas: list[str], tope: int = MAX_ETIQUETAS_SEMANA) -> tuple[list[str], list[str]]:
+    """Qué semanas rotular en el eje y con qué texto corto: ("Sem 27", ...) → (tickvals, ["S27", ...]).
+
+    El eje es de CATEGORÍAS y ahí Plotly no oculta las etiquetas que se pisan: con
+    `nticks=10` y `tickangle=0`, a 360 px diez "Sem 27" (~42 px cada una) se montaban
+    unas sobre otras. Se rotula una de cada `paso`, siempre la ÚLTIMA (la semana en
+    curso es la que se busca), y el nombre completo queda en el tooltip.
+    """
+    if not semanas:
+        return [], []
+    paso = -(-len(semanas) // tope)                   # techo: nunca más de `tope` etiquetas
+    vals = semanas[::-1][::paso][::-1]
+    return vals, [s.replace("Sem ", "S") for s in vals]
+
+
 def figura_semanal(por_semana: list[dict]) -> go.Figure:
     df = pd.DataFrame(por_semana, columns=["semana", "horas"])
     fig = go.Figure(go.Bar(x=df["semana"], y=df["horas"], marker_color=COLOR_SERIE,
                            hovertemplate="%{x}<br><b>%{y:.1f} h</b><extra></extra>"))
-    # Eje de CATEGORÍAS ("Sem 27"): Plotly pinta una etiqueta por barra y con 40 semanas
-    # se apilaban en vertical. `nticks` deja que muestre una de cada N.
+    vals, textos = etiquetas_semana(df["semana"].tolist())
     fig.update_layout(template=PLANTILLA, showlegend=False,
-                      xaxis=dict(title=None, nticks=10, tickangle=0), yaxis=dict(title="Horas"))
+                      xaxis=dict(title="Semana ISO", tickmode="array", tickvals=vals,
+                                 ticktext=textos, tickangle=0),
+                      yaxis=dict(title="Horas"))
     return fig
 
 
@@ -207,7 +225,8 @@ def figura_acumulado(por_dia: list[dict]) -> go.Figure | None:
         hovertemplate="%{x|%d-%m-%Y}<br><b>%{y:.0f} h</b> acumuladas<extra></extra>",
     ))
     fig.update_layout(template=PLANTILLA, showlegend=False, hovermode="x",
-                      xaxis=dict(title=None, showspikes=True, spikemode="across",
+                      xaxis=dict(title=None, tickformatstops=FECHAS_COMPACTAS,
+                                 showspikes=True, spikemode="across",
                                  spikethickness=1, spikedash="solid", spikecolor="#8A93A8"),
                       yaxis=dict(title="Horas acumuladas"))
     return fig
@@ -251,6 +270,6 @@ def figura_tendencia(tendencia: dict | None) -> go.Figure | None:
                    line=dict(color=COLOR_TENDENCIA, width=2),
                    hovertemplate="%{y:.1f} h<extra>Tendencia</extra>"),
     ])
-    fig.update_layout(template=PLANTILLA, hovermode="x unified",
-                      yaxis_title="Horas", xaxis_title="Semana (lunes)")
+    fig.update_layout(template=PLANTILLA, hovermode="x unified", yaxis_title="Horas",
+                      xaxis=dict(title="Semana (lunes)", tickformatstops=FECHAS_COMPACTAS))
     return fig

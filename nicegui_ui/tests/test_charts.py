@@ -4,10 +4,12 @@ import pytest
 
 from nicegui_ui import plotly_tema
 from nicegui_ui.charts import (
+    MAX_ETIQUETAS_SEMANA,
     OTROS_PROYECTOS,
     calendario_actividad,
     colores_proyecto,
     construir_figuras,
+    etiquetas_semana,
     figura_esfuerzo,
     figura_tendencia,
     plegar_proyectos,
@@ -67,6 +69,25 @@ def test_una_serie_un_color_y_sin_colorbar_redundante(clave):
     fig = construir_figuras(RESUMEN)[clave]
     assert fig.data[0].marker.color == plotly_tema.PALETA[0]
     assert fig.layout.coloraxis.colorbar.to_plotly_json() == {}
+
+
+@pytest.mark.parametrize("n", [1, 6, 7, 40, 104])
+def test_el_eje_semanal_nunca_rotula_mas_del_tope_y_siempre_la_ultima(n):
+    """Eje de categorías: Plotly no oculta las etiquetas que se pisan, así que el tope
+    lo pone el código. La última semana (la en curso) siempre lleva rótulo."""
+    semanas = [f"Sem {i}" for i in range(1, n + 1)]
+    vals, textos = etiquetas_semana(semanas)
+    assert 1 <= len(vals) <= MAX_ETIQUETAS_SEMANA
+    assert vals[-1] == semanas[-1]
+    assert textos[-1] == f"S{n}"
+
+
+def test_la_figura_semanal_usa_las_etiquetas_cortas():
+    semanas = [{"semana": f"Sem {i}", "horas": 1.0} for i in range(3, 43)]
+    eje = construir_figuras({**RESUMEN, "por_semana": semanas})["semanal"].layout.xaxis
+    assert eje.tickmode == "array"
+    assert len(eje.tickvals) <= MAX_ETIQUETAS_SEMANA
+    assert all(t.startswith("S") and " " not in t for t in eje.ticktext)
 
 
 # ─── plegado de colas ────────────────────────────────────────────────────────

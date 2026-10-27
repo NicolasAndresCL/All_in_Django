@@ -813,6 +813,7 @@ gráfico del dashboard de Tareas**, antes y después:
 | El svg no seguía al contenedor al cerrar el drawer | Lo resuelve el `ResizeObserver` del componente `ui.plotly` (verificado: 646 = 646 px tras cerrar) |
 | Gantt sin plantilla (ejes en `#2a3f5f` sobre negro); sunburst con cientos de rebanadas | Plantilla `aid` para todos; **treemap** con colas plegadas |
 | Drawer abierto como overlay en cada navegación < 1024 px; filas `no-wrap` en LiveOps y Notas | Drawer `show-if-above`; rejillas que apilan en móvil |
+| Etiquetas «Sem N» del eje X montadas unas sobre otras a 360 px | Máximo 6 rótulos cortos («S27», siempre la última semana); ejes de fecha en una sola línea. 0 solapes medidos en los 7 gráficos a 360/412/768/1280 px |
 
 Lo que ya estaba bien y se conservó: ningún ancho tenía scroll horizontal de página y ningún
 gráfico desbordaba su tarjeta. Los gráficos modernos se eligieron con la skill `dataviz`

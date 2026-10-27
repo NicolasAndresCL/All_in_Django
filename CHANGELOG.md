@@ -53,6 +53,10 @@ no cambia: es un cambio solo de la imagen `all-in-django-ui`.
   AA); ahora tinta oscura, 5,6–14:1. Declarado en la capa CSS `theme` para ganarle al `!important` de
   Quasar.
 - Los Gantt no usaban plantilla: ejes y título en el azul marino de Plotly (`#2a3f5f`) sobre negro.
+- Etiquetas del eje X que se pisaban a 360–412 px: «Productividad semanal» rotula como máximo 6 semanas
+  en corto («S27», siempre la última; la completa en el tooltip) y los ejes de fecha usan formatos de una
+  línea (`FECHAS_COMPACTAS`) en vez de la segunda línea automática de Plotly. Test visual que mide las
+  cajas reales de los ticks; la API falsa de los tests pasa de 1 a 40 semanas.
 - Se elimina el listener de `fullscreenchange` que llamaba a `window.Plotly`, que no existe (NiceGUI carga
   Plotly como módulo ES): el reajuste lo hace el `ResizeObserver` del componente.
 
