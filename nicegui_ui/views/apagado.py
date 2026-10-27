@@ -92,13 +92,13 @@ def render() -> None:
                               accion.value, m * 60, forzar.value)) \
                     .props("outline")
 
-        with ui.row().classes("gap-2 items-end"):
+        with ui.row().classes("gap-2 items-end flex-wrap"):
             mins = ui.number("Minutos", value=45, min=0, precision=0).classes("w-32")
             ui.button("Programar", icon="timer",
                       on_click=lambda: _programar(
                           accion.value, int(mins.value or 0) * 60, forzar.value))
 
-        with ui.row().classes("gap-2 items-end"):
+        with ui.row().classes("gap-2 items-end flex-wrap"):
             hora = ui.input("A una hora (HH:MM)", value="23:30").classes("w-40")
             ui.button("Programar a esa hora", icon="schedule",
                       on_click=lambda: _programar_a_hora(hora.value, accion.value,

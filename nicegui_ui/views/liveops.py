@@ -9,10 +9,12 @@ from nicegui_ui.gantt import generar_gantt_equipo
 from nicegui_ui.layout import (
     aviso,
     banner_error,
+    fila_metricas,
     grafico,
     metric_card,
     notificar_error,
     notificar_ok,
+    rejilla_dos,
     shell,
     tabla,
 )
@@ -54,7 +56,7 @@ def render() -> None:
                 ui.select([TODOS] + TRABAJADORES, value=estado["trabajador"], label="Trabajador",
                           on_change=lambda e: (estado.update(trabajador=e.value),
                                                listado.refresh())) \
-                    .classes("w-44")
+                    .classes("w-full sm:w-44")
 
         # ------------------------------------------------------- listado
         @ui.refreshable
@@ -68,30 +70,38 @@ def render() -> None:
                 aviso("Sin turnos para los filtros actuales.")
                 return
             tabla(turnos)
-            with ui.row().classes("gap-3"):
+            with fila_metricas(3):
                 metric_card("Turnos", len(turnos))
                 metric_card("Horas netas", round(sum(t.get("neto", 0) for t in turnos), 2))
                 metric_card("Horas extra", round(sum(t.get("extra", 0) for t in turnos), 2))
-            grafico(generar_gantt_equipo(turnos))
+            # Alto "xl": 7 días × 4 personas agrupadas necesitan filas legibles.
+            grafico(generar_gantt_equipo(turnos), "Turnos del equipo", alto="xl",
+                    nombre="turnos_equipo")
 
         listado()
         ui.separator()
 
-        with ui.row().classes("w-full gap-6 items-start no-wrap"):
+        # Antes una fila `no-wrap` con `w-1/2`: a 360 px apretaba las dos columnas en
+        # ~160 px cada una. La rejilla las apila en móvil y las pone lado a lado en tablet.
+        with rejilla_dos():
             # -- alta manual ---------------------------------------------
-            with ui.column().classes("w-1/2"):
+            with ui.column().classes("w-full min-w-0"):
                 ui.label("Nuevo turno").classes("text-lg font-medium")
                 f_sem = ui.input("Semana (lunes)", value=_lunes(date.today())) \
                     .props("type=date")
-                with ui.row().classes("gap-3"):
+                # Pares de campos que se reparten el ancho (`grow basis-0`) en vez de
+                # anchos fijos que desbordaban a 360 px.
+                with ui.row().classes("w-full gap-3 no-wrap"):
                     f_trab = ui.select(TRABAJADORES, value=TRABAJADORES[0], label="Trabajador") \
-                        .classes("w-40")
+                        .classes("grow basis-0 min-w-0")
                     f_dia = ui.select(DIAS, value=DIAS[0], label="Día") \
-                        .classes("w-40")
+                        .classes("grow basis-0 min-w-0")
                 f_libre = ui.checkbox("Día libre", value=False)
-                with ui.row().classes("gap-3"):
-                    f_in = ui.input("Entrada", value="09:00").props("type=time")
-                    f_out = ui.input("Salida", value="18:00").props("type=time")
+                with ui.row().classes("w-full gap-3 no-wrap"):
+                    f_in = ui.input("Entrada", value="09:00").props("type=time") \
+                        .classes("grow basis-0 min-w-0")
+                    f_out = ui.input("Salida", value="18:00").props("type=time") \
+                        .classes("grow basis-0 min-w-0")
                 # disabled reactivo (con st.form no reaccionaba hasta el submit).
                 f_in.bind_enabled_from(f_libre, "value", backward=lambda v: not v)
                 f_out.bind_enabled_from(f_libre, "value", backward=lambda v: not v)
@@ -115,7 +125,7 @@ def render() -> None:
                 ui.button("Crear turno", on_click=crear).props("color=primary")
 
             # -- importar / exportar --------------------------------------
-            with ui.column().classes("grow"):
+            with ui.column().classes("w-full min-w-0"):
                 ui.label("Importar / Exportar").classes("text-lg font-medium")
                 ui.label("Importar turnos (CSV o Excel con Fecha, Agente, Entrada, Salida):") \
                     .classes("text-xs text-gray-500")
@@ -154,7 +164,7 @@ def render() -> None:
                     except APIError as exc:
                         notificar_error(f"Error: {exc}")
 
-                with ui.row().classes("gap-2"):
+                with ui.row().classes("gap-2 flex-wrap"):
                     ui.button("EXCEL", on_click=lambda: exportar("excel")).props("outline")
                     ui.button("PDF", on_click=lambda: exportar("pdf")).props("outline")
                     ui.button("PDF con formato", on_click=pdf_formato).props("outline")

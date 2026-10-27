@@ -13,7 +13,7 @@ def render() -> None:
             .classes("text-sm text-gray-500")
 
         busqueda = ui.input(placeholder="Buscar canal…") \
-            .props("clearable debounce=400").classes("w-64")
+            .props("clearable debounce=400").classes("w-full sm:w-64")
 
         @ui.refreshable
         def grilla() -> None:
@@ -29,7 +29,8 @@ def render() -> None:
                 aviso("No hay canales para la búsqueda.")
                 return
 
-            with ui.grid(columns=4).classes("w-full gap-3"):
+            # 2 columnas en móvil → 6 en pantallas anchas (antes 4 fijas a cualquier ancho).
+            with ui.grid().classes("w-full gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6"):
                 for canal in canales:
                     with ui.card().classes("p-3 items-center gap-2"):
                         if canal.get("logo"):
