@@ -208,6 +208,13 @@ jobs:
           c="docker compose --env-file .env.vps-ci -f docker-compose.deploy.yml -f compose.traefik.yml"
           $c config --quiet
           $c config --format json | python3 scripts/comprobar_override_traefik.py
+      # compose.n8n.yml (red interna con el worker de n8n) va ENCIMA del de Traefik en el VPS:
+      # se comprueba la pila de tres archivos, tal como la arma el COMPOSE_FILE del servidor.
+      - name: Con compose.n8n.yml encima, solo la API entra a la red de n8n
+        run: |
+          c="docker compose --env-file .env.vps-ci -f docker-compose.deploy.yml -f compose.traefik.yml -f compose.n8n.yml"
+          $c config --quiet
+          $c config --format json | python3 scripts/comprobar_override_traefik.py --con-n8n
 
   build:
     name: build + arranque del stack

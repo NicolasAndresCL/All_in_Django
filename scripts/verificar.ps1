@@ -113,7 +113,7 @@ Ejecutar 'terraform fmt + validate + test' {
 #     (corre incluso con -Rapido) ni secretos reales, asi que los valores de mentira van a un
 #     archivo FUERA del repo. Las comprobaciones viven en scripts\comprobar_override_traefik.py,
 #     compartido con el job: "el override esta bien" tiene una sola definicion.
-Ejecutar 'override de Traefik (compose config)' {
+Ejecutar 'overrides del VPS: Traefik y n8n (compose config)' {
     $envVps = Join-Path $env:TEMP 'verificar_override_traefik.env'
     @(
         'IMAGE_TAG=0.0.0', 'SECRET_KEY=ci', 'POSTGRES_PASSWORD=ci', 'API_TOKEN=ci',
@@ -124,6 +124,12 @@ Ejecutar 'override de Traefik (compose config)' {
     docker @cfg config --quiet
     if ($LASTEXITCODE -ne 0) { return }
     docker @cfg config --format json | & $py scripts\comprobar_override_traefik.py
+    if ($LASTEXITCODE -ne 0) { return }
+    # Con compose.n8n.yml encima, como en el COMPOSE_FILE del VPS (gemelo del segundo paso del job).
+    $cfg += @('-f', 'compose.n8n.yml')
+    docker @cfg config --quiet
+    if ($LASTEXITCODE -ne 0) { return }
+    docker @cfg config --format json | & $py scripts\comprobar_override_traefik.py --con-n8n
 }
 
 # 4) smoke: que el stack ARRANQUE, no solo que las imagenes compilen.
