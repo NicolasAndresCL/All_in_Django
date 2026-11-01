@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
       # Version FIJA, no `latest`: la version de Terraform cambia el comportamiento de
       # `test` y del backend (use_lockfile exige >= 1.10). Misma que scripts/verificar.ps1.
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.16.3"
       - name: terraform fmt -check
