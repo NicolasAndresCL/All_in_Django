@@ -3,7 +3,7 @@
 # psycopg[binary] trae wheels precompilados → no hace falta libpq-dev ni compilador.
 
 # ─── Stage 1: dependencias ───────────────────────────────────────────────────
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
 
 # ─── Stage 2: runtime ────────────────────────────────────────────────────────
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=config.settings \
