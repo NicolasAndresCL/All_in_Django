@@ -6,13 +6,13 @@
 # El código se importa CUALIFICADO (nicegui_ui.*), así que se copia como paquete bajo
 # /app/nicegui_ui y se arranca con `python -m nicegui_ui.main` (PYTHONPATH=/app).
 
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
 
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app UI_HEADLESS=1
 # Zona horaria: calendario, liveops y tareas usan date.today() para "hoy" y "la semana actual",
